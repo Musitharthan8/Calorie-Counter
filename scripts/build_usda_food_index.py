@@ -163,6 +163,244 @@ def aliases_for_description(description: str) -> list[str]:
     return [x for x in result if (n := normalize_name(x)) and not (n in seen or seen.add(n))]
 
 
+def _finite_nonnegative(value: object) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
+
+
+def _json_member(path: Path) -> str | None:
+    if path.suffix.lower() == ".json":
+        return ""
+    if not path.is_file() or not zipfile.is_zipfile(path):
+        return None
+    with zipfile.ZipFile(path) as archive:
+        members = [
+            name for name in archive.namelist()
+            if not name.endswith("/") and name.lower().endswith(".json")
+        ]
+    if len(members) > 1:
+        raise SystemExit(f"Expected at most one JSON file in {path}; found {len(members)}")
+    return members[0] if members else None
+
+
+def _load_json_document(path: Path) -> dict[str, object]:
+    member = _json_member(path)
+    if member is None:
+        raise SystemExit(f"No USDA JSON document found in {path}")
+    try:
+        if member == "":
+            with path.open(encoding="utf-8-sig") as fh:
+                value = json.load(fh)
+        else:
+            with zipfile.ZipFile(path) as archive:
+                with archive.open(member) as raw:
+                    import io
+                    with io.TextIOWrapper(raw, encoding="utf-8-sig") as fh:
+                        value = json.load(fh)
+    except (OSError, UnicodeError, json.JSONDecodeError, zipfile.BadZipFile) as error:
+        raise SystemExit(f"Unable to read USDA JSON input {path}: {error}") from error
+    if not isinstance(value, dict):
+        raise SystemExit(f"USDA JSON input must contain a top-level object: {path}")
+    return value
+
+
+def _normalize_json_unit(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    return {
+        "µg": "ug",
+        "μg": "ug",
+        "ug": "ug",
+        "mcg": "ug",
+        "g": "g",
+        "mg": "mg",
+        "kcal": "kcal",
+    }.get(raw, raw)
+
+
+def _json_nutrients(item: dict[str, object]) -> dict[str, tuple[float, str]]:
+    result: dict[str, tuple[float, str]] = {}
+    energy: dict[int, float] = {}
+    raw_entries = item.get("foodNutrients")
+    if not isinstance(raw_entries, list):
+        return result
+
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            continue
+        raw_nutrient = raw_entry.get("nutrient")
+        if not isinstance(raw_nutrient, dict):
+            continue
+        try:
+            nutrient_id = int(raw_nutrient.get("id"))
+        except (TypeError, ValueError):
+            continue
+        amount = _finite_nonnegative(raw_entry.get("amount"))
+        if amount is None:
+            continue
+        unit = _normalize_json_unit(raw_nutrient.get("unitName"))
+
+        if nutrient_id in ENERGY_ID_PRECEDENCE:
+            if unit == "kcal":
+                existing = energy.get(nutrient_id)
+                if existing is not None and existing != amount:
+                    raise ValueError(f"Conflicting USDA energy values for nutrient {nutrient_id}")
+                energy[nutrient_id] = amount
+            continue
+
+        mapped = NUTRIENTS.get(nutrient_id)
+        if mapped is None:
+            continue
+        key, expected_unit = mapped
+        if unit != expected_unit:
+            continue
+        existing = result.get(key)
+        candidate = (amount, expected_unit)
+        if existing is not None and existing != candidate:
+            raise ValueError(f"Conflicting USDA nutrient values for {key}")
+        result[key] = candidate
+
+    for nutrient_id in ENERGY_ID_PRECEDENCE:
+        if nutrient_id in energy:
+            result["calories"] = (energy[nutrient_id], "kcal")
+            break
+    return result
+
+
+def _leading_portion_amount(description: str) -> float | None:
+    match = re.match(r"^\s*(\d+(?:\.\d+)?|\d+\s*/\s*\d+)\b", description)
+    if match is None:
+        return None
+    token = match.group(1).replace(" ", "")
+    if "/" in token:
+        numerator, denominator = token.split("/", 1)
+        try:
+            denominator_value = float(denominator)
+            result = float(numerator) / denominator_value
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+    else:
+        try:
+            result = float(token)
+        except ValueError:
+            return None
+    return result if math.isfinite(result) and result > 0 else None
+
+
+def _json_portions(item: dict[str, object]) -> list[dict[str, object]]:
+    raw_portions = item.get("foodPortions")
+    if not isinstance(raw_portions, list):
+        return []
+
+    portions: list[dict[str, object]] = []
+    for raw in raw_portions:
+        if not isinstance(raw, dict):
+            continue
+        grams = _finite_nonnegative(raw.get("gramWeight"))
+        if grams is None or grams <= 0:
+            continue
+
+        description = str(raw.get("portionDescription") or raw.get("modifier") or "").strip()
+        measure = raw.get("measureUnit")
+        measure_name = ""
+        measure_abbreviation = ""
+        if isinstance(measure, dict):
+            measure_name = str(measure.get("name") or "").strip()
+            measure_abbreviation = str(measure.get("abbreviation") or "").strip()
+        measure_text = " ".join(
+            text for text in (measure_abbreviation, measure_name)
+            if text and text.lower() != "undetermined"
+        )
+
+        amount = _finite_nonnegative(raw.get("amount"))
+        if amount is None or amount <= 0:
+            amount = _leading_portion_amount(description) or 1.0
+
+        unit = portion_unit(measure_text, description, str(raw.get("modifier") or ""))
+        if unit is None:
+            # Keep an unknown source measure only as an exact, source-authored label. It will not
+            # match cup/piece/etc. unless the interpreter emits the same normalized wording.
+            stripped = re.sub(
+                r"^\s*(?:\d+(?:\.\d+)?|\d+\s*/\s*\d+)\s*",
+                "",
+                description,
+            ).strip()
+            unit = (stripped or measure_text)[:48] or None
+        if not unit:
+            continue
+
+        portions.append(
+            {
+                "amount": amount,
+                "unit": unit,
+                "grams": grams,
+                "description": description or None,
+            }
+        )
+
+    unique = {
+        (str(p["unit"]), float(p["amount"]), float(p["grams"])): p
+        for p in portions
+    }
+    result = list(unique.values())
+    for portion in result:
+        portion["is_default"] = len(result) == 1
+    return result
+
+
+def read_json_dataset(
+    path: Path,
+) -> tuple[dict[int, dict[str, str]], dict[int, dict[str, tuple[float, str]]], dict[int, list[dict[str, object]]]]:
+    document = _load_json_document(path)
+    roots = [root for root in JSON_ROOT_DATA_TYPES if root in document]
+    if len(roots) != 1:
+        raise SystemExit(
+            f"Expected exactly one supported USDA JSON root in {path}; found {roots or 'none'}"
+        )
+    root = roots[0]
+    data_type = JSON_ROOT_DATA_TYPES[root]
+    records = document.get(root)
+    if not isinstance(records, list):
+        raise SystemExit(f"USDA JSON root {root} must be an array: {path}")
+
+    foods: dict[int, dict[str, str]] = {}
+    nutrients: dict[int, dict[str, tuple[float, str]]] = {}
+    portions: dict[int, list[dict[str, object]]] = {}
+    expected_data_type = JSON_DATA_TYPE_NAMES[data_type]
+
+    for raw_item in records:
+        if not isinstance(raw_item, dict):
+            continue
+        declared = raw_item.get("dataType")
+        if declared is not None and str(declared) != expected_data_type:
+            continue
+        try:
+            fdc_id = int(raw_item.get("fdcId"))
+        except (TypeError, ValueError):
+            continue
+        if fdc_id <= 0:
+            continue
+        description = str(raw_item.get("description") or "").strip()
+        if not description:
+            continue
+        if fdc_id in foods:
+            raise SystemExit(f"Duplicate USDA FDC ID {fdc_id} in {path}")
+
+        try:
+            parsed_nutrients = _json_nutrients(raw_item)
+        except ValueError:
+            # A conflicting published nutrient row is unsafe for automatic resolution.
+            continue
+
+        foods[fdc_id] = {"description": description, "data_type": data_type}
+        nutrients[fdc_id] = parsed_nutrients
+        portions[fdc_id] = _json_portions(raw_item)
+
+    return foods, nutrients, portions
+
+
 def discover_csv_root(root: Path) -> Path:
     if (root / "food.csv").exists():
         return root
