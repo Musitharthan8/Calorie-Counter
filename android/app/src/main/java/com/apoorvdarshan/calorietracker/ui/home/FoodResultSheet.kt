@@ -532,7 +532,7 @@ fun FoodResultSheet(
                                 .joinToString(" • "),
                             style = MaterialTheme.typography.labelMedium
                         )
-                        analysis.nutritionWarnings.forEach { warning ->
+                        warningsAfterEdits().forEach { warning ->
                             Text(warning, style = MaterialTheme.typography.bodySmall)
                         }
                     }
