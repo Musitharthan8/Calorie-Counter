@@ -245,7 +245,12 @@ class AppContainer(app: FudAIApp) {
         nutritionSources = buildList {
             add(
                 com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
-                    foodRepository.migratedFavorites()
+                    val favorites = foodRepository.migratedFavorites()
+                    val learned = foodRepository.frequent()
+                        .filter { it.count >= 3 }
+                        .sortedByDescending { it.template.timestamp }
+                        .map { it.template }
+                    favorites + learned
                 }
             )
             add(com.apoorvdarshan.calorietracker.nutrition.OpenFoodFactsNutritionSource())
