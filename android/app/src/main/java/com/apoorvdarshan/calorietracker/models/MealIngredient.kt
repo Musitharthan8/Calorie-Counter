@@ -19,13 +19,27 @@ data class MealIngredient(
     val allImageFilenames: List<String>
         get() = (listOfNotNull(imageFilename) + additionalImageFilenames).distinct()
 
-    fun scaled(factor: Double): MealIngredient = copy(
-        grams = grams * factor,
-        calories = (calories * factor).roundToInt(),
-        protein = protein * factor,
-        carbs = carbs * factor,
-        fat = fat * factor
-    )
+    fun scaled(factor: Double): MealIngredient {
+        require(factor.isFinite() && factor >= 0.0) { "Invalid ingredient scale" }
+        fun scaledDouble(value: Double, label: String): Double {
+            require(value.isFinite() && value >= 0.0) { "Invalid ingredient $label" }
+            val result = value * factor
+            require(result.isFinite() && result >= 0.0) { "Unsafe ingredient $label" }
+            return result
+        }
+
+        val scaledCalories = calories.toDouble() * factor
+        require(scaledCalories.isFinite() && scaledCalories in 0.0..Int.MAX_VALUE.toDouble()) {
+            "Unsafe ingredient calories"
+        }
+        return copy(
+            grams = scaledDouble(grams, "grams"),
+            calories = scaledCalories.roundToInt(),
+            protein = scaledDouble(protein, "protein"),
+            carbs = scaledDouble(carbs, "carbohydrate"),
+            fat = scaledDouble(fat, "fat")
+        )
+    }
 }
 
 data class MealIngredientTotals(
@@ -36,10 +50,30 @@ data class MealIngredientTotals(
     val fat: Double
 )
 
-fun List<MealIngredient>.totals(): MealIngredientTotals = MealIngredientTotals(
-    grams = sumOf { it.grams },
-    calories = sumOf { it.calories },
-    protein = sumOf { it.protein },
-    carbs = sumOf { it.carbs },
-    fat = sumOf { it.fat }
-)
+fun List<MealIngredient>.totals(): MealIngredientTotals {
+    fun sumDouble(label: String, value: (MealIngredient) -> Double): Double {
+        var total = 0.0
+        forEach { ingredient ->
+            val current = value(ingredient)
+            require(current.isFinite() && current >= 0.0) { "Invalid ingredient $label" }
+            total += current
+            require(total.isFinite() && total >= 0.0) { "Unsafe ingredient $label total" }
+        }
+        return total
+    }
+
+    var calorieTotal = 0L
+    forEach { ingredient ->
+        require(ingredient.calories >= 0) { "Invalid ingredient calories" }
+        calorieTotal += ingredient.calories.toLong()
+        require(calorieTotal <= Int.MAX_VALUE.toLong()) { "Unsafe ingredient calorie total" }
+    }
+
+    return MealIngredientTotals(
+        grams = sumDouble("grams") { it.grams },
+        calories = calorieTotal.toInt(),
+        protein = sumDouble("protein") { it.protein },
+        carbs = sumDouble("carbohydrate") { it.carbs },
+        fat = sumDouble("fat") { it.fat }
+    )
+}
