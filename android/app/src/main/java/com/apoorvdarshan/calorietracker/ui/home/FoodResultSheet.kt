@@ -260,6 +260,14 @@ fun FoodResultSheet(
     fun baseDoubleFromText(text: String): Double = (decimalValue(text) ?: 0.0) / scale.coerceAtLeast(0.0001)
     fun baseOptionalFromText(text: String): Double? = decimalValue(text)?.let { it / scale.coerceAtLeast(0.0001) }
     fun scaledIngredients() = editableIngredients.map { it.scaled(scale) }
+    fun scaledSourceNutrients() = analysis.sourceNutrients.mapValues { (_, nutrient) ->
+        nutrient.copy(amount = nutrient.amount * scale)
+    }
+    fun sourceNutrientLabel(key: String): String = key
+        .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    fun sourceNutrientText(key: String, nutrient: com.apoorvdarshan.calorietracker.nutrition.NutrientAmount): String =
+        "${sourceNutrientLabel(key)} ${String.format(java.util.Locale.US, "%.1f", nutrient.amount)} ${nutrient.unit}"
     fun applyMicronutrients(snapshot: MealMicronutrientSnapshot) {
         editableSugar = snapshot.sugar
         editableAddedSugar = snapshot.addedSugar
@@ -444,6 +452,7 @@ fun FoodResultSheet(
         cholesterol = scaledD(editableCholesterol),
         caffeine = scaledD(editableCaffeine),
         supplementalNutrients = editableSupplementalNutrients.mapValues { (_, value) -> scaledD(value) ?: 0.0 },
+        sourceNutrients = scaledSourceNutrients(),
         sodium = scaledD(editableSodium),
         potassium = scaledD(editablePotassium),
         transFat = scaledD(editableTransFat),
@@ -534,6 +543,17 @@ fun FoodResultSheet(
                         )
                         warningsAfterEdits().forEach { warning ->
                             Text(warning, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (analysis.sourceNutrients.isNotEmpty()) {
+                            Text(
+                                scaledSourceNutrients()
+                                    .toSortedMap()
+                                    .entries
+                                    .joinToString(" • ") { (key, nutrient) ->
+                                        sourceNutrientText(key, nutrient)
+                                    },
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                     }
                 }
