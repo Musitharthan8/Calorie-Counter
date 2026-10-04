@@ -89,6 +89,35 @@ Action for this fork:
 - Keep photo interpretation contract component-based now.
 - Evaluate lighter segmentation/on-device models later; do not block text/database work on vision R&D.
 
+
+### FoodOn (CC BY 4.0)
+https://github.com/FoodOntology/foodon
+
+Useful pattern:
+- A neutral controlled vocabulary plus synonym table can help map aliases and translations without
+  flattening culturally distinct foods into generic labels.
+
+Action for this fork:
+- Consider FoodOn only as an alias/ontology aid, never as a nutrition source.
+- Keep local culturally specific names as first-class labels; ontology ids can be optional crosswalks.
+- Do not let an ontology mapping overwrite the user's original wording.
+
+### Ingredient Parser / Recipe Scrapers (MIT)
+https://github.com/strangetom/ingredient-parser
+https://github.com/recipe-scrapers/recipe-scrapers
+
+Useful pattern:
+- Recipe URLs and ingredient lines can become structured quantities, units, ingredient names and yields.
+
+Action for this fork:
+- Future "Import recipe from link" flow: fetch/parse Schema.org Recipe data, parse each ingredient line,
+  resolve each ingredient through the same nutrition engine, calculate the full recipe, then divide by
+  explicit yield/servings and save as a Personal recipe.
+- Do not embed Python/Node runtimes in the Android app just to reuse these libraries. Reimplement the
+  small portable contract in Kotlin or use them as offline tooling/test references.
+- Respect each recipe website's terms; parsing structured metadata does not grant rights to republish
+  recipe text or images.
+
 ## Data-source notes
 
 ### Open Food Facts
