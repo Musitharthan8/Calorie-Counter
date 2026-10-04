@@ -75,7 +75,8 @@ class NutritionResolver(private val sources: List<NutritionSource>) {
                 sourceUrl = candidate.sourceUrl,
                 datasetVersion = candidate.datasetVersion,
                 license = candidate.license,
-                attribution = candidate.attribution
+                attribution = candidate.attribution,
+                portionEstimated = !quantity.explicit || candidate.referencePortionEstimated
             ))
     }
 }
