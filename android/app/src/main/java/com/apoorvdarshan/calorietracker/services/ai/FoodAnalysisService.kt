@@ -493,21 +493,25 @@ class FoodAnalysisService(
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            return analyzeFood(images, description, progressiveMeal).copy(
-                nutritionProvenance = listOf(
-                    com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
-                        source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.AI_ESTIMATE,
-                        sourceName = "AI estimate",
-                        evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.AI_ESTIMATE,
-                        estimated = true,
-                        confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.LOW,
-                        originalWording = inputLabel,
-                        canonicalName = "Photo meal"
-                    )
-                ),
+            val fallback = analyzeFood(images, description, progressiveMeal)
+            fun provenance(name: String) =
+                com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+                    source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.AI_ESTIMATE,
+                    sourceName = "AI estimate",
+                    evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.AI_ESTIMATE,
+                    estimated = true,
+                    confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.LOW,
+                    originalWording = inputLabel,
+                    canonicalName = name
+                )
+            return fallback.copy(
+                nutritionProvenance = listOf(provenance(fallback.name)),
                 nutritionWarnings = listOf(
                     "Structured photo interpretation was unavailable. Nutrition is an AI estimate."
-                )
+                ),
+                ingredients = fallback.ingredients.map {
+                    it.copy(nutritionProvenance = provenance(it.name))
+                }
             )
         }
 
