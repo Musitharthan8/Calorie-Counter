@@ -52,8 +52,9 @@ class OpenFoodFactsNutritionSourceTest {
         val mention = FoodMention(
             id = "1",
             name = "Protein Bar",
-            originalWording = "50 g Protein Bar",
+            originalWording = "50 g BrandX Protein Bar",
             quantity = FoodQuantity(50.0, "g"),
+            brand = "BrandX",
             confidence = InterpretationConfidence.HIGH
         )
         val result = NutritionResolver(listOf(source))
@@ -83,6 +84,25 @@ class OpenFoodFactsNutritionSourceTest {
         assertTrue(weakName.search(brandedMention.copy(brand = null)).isEmpty())
     }
 
+    @Test fun unbrandedTextNeverAutoSelectsACommunityProduct() = runBlocking {
+        var calls = 0
+        val source = OpenFoodFactsNutritionSource(
+            searchOverride = { _, _, _ ->
+                calls += 1
+                listOf(hit())
+            }
+        )
+        val mention = FoodMention(
+            id = "1",
+            name = "Protein Bar",
+            originalWording = "1 protein bar",
+            quantity = FoodQuantity(1.0, "serving")
+        )
+
+        assertTrue(source.search(mention).isEmpty())
+        assertEquals(0, calls)
+    }
+
     @Test fun repeatedLookupUsesLocalCache() = runBlocking {
         var calls = 0
         val source = OpenFoodFactsNutritionSource(
@@ -91,7 +111,13 @@ class OpenFoodFactsNutritionSourceTest {
                 listOf(hit())
             }
         )
-        val mention = FoodMention("1", "Protein Bar", "1 Protein Bar", FoodQuantity(1.0, "serving"))
+        val mention = FoodMention(
+            "1",
+            "Protein Bar",
+            "1 BrandX Protein Bar",
+            FoodQuantity(1.0, "serving"),
+            brand = "BrandX"
+        )
         source.search(mention)
         source.search(mention)
         assertEquals(1, calls)
