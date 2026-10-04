@@ -44,6 +44,25 @@ class MealInterpretationTest {
         assertEquals("Amma's chicken curry", parser.parse(cases[4].first).foods.first().personalFoodName)
     }
 
+
+    @Test fun householdUnitsShareOneNormalizedVocabulary() {
+        val cases = mapOf(
+            "2 slices bread" to FoodQuantity(2.0, "slice"),
+            "3 packets crackers" to FoodQuantity(3.0, "packet"),
+            "1 can tuna" to FoodQuantity(1.0, "can"),
+            "2 tablespoons sambal" to FoodQuantity(2.0, "tbsp"),
+            "1 teaspoon sugar" to FoodQuantity(1.0, "tsp"),
+            "250 millilitres milk" to FoodQuantity(250.0, "ml"),
+            "1 liter water" to FoodQuantity(1.0, "litre")
+        )
+        cases.forEach { (text, expected) ->
+            assertEquals(text, expected, parser.parse(text).foods.single().quantity)
+        }
+        assertEquals("slice", LocalMealInterpreter.normaliseUnit("slices"))
+        assertEquals("container", LocalMealInterpreter.normaliseUnit("containers"))
+        assertEquals("fl oz", LocalMealInterpreter.normaliseUnit("fl   oz"))
+    }
+
     @Test fun namesAreNotRestrictedToKnownRegionalDishes() {
         listOf("kopi O", "milo dinosaur", "thosai", "idli", "cai png", "economic rice", "rasam", "sambal sotong",
             "ayam penyet", "briyani", "murtabak", "laksa", "mee rebus", "mee goreng", "char kway teow",
