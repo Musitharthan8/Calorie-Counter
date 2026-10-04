@@ -40,7 +40,9 @@ data class CanonicalFoodPortion(
     /** Gram mass for [amount] of [unit], only when the source explicitly supplies it. */
     val grams: Double,
     val description: String? = null,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    /** True when gram mass was mathematically inferred rather than directly supplied upstream. */
+    val isDerived: Boolean = false
 ) {
     init {
         require(amount.isFinite() && amount > 0)
@@ -210,7 +212,8 @@ class CanonicalOfflineNutritionSource(
             preparation = preparation,
             supportedModifiers = supportedModifiers,
             reliability = reliability,
-            estimated = false
+            estimated = false,
+            referencePortionEstimated = portion?.isDerived == true
         )
     }
 }
