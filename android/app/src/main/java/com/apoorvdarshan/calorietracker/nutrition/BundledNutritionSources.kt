@@ -20,6 +20,11 @@ internal object BundledNutritionSources {
             expectedSource = NutritionSourceKind.USDA,
             databasePath = "nutrition/usda/usda_foods.sqlite",
             manifestPath = "nutrition/usda/usda_foods.manifest.json"
+        ),
+        AssetDataset(
+            expectedSource = NutritionSourceKind.INDB,
+            databasePath = "nutrition/indb/indb_foods.sqlite",
+            manifestPath = "nutrition/indb/indb_foods.manifest.json"
         )
     )
 
