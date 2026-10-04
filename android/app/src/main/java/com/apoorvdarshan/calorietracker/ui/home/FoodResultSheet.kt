@@ -260,7 +260,10 @@ fun FoodResultSheet(
     fun displayD(v: Double?) = v?.let { String.format("%.1f", it) } ?: emDashText
     fun editD(v: Double?) = v?.let { String.format("%.1f", it) }.orEmpty()
     fun decimalValue(text: String): Double? =
-        text.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0.0 }
+        text.trim()
+            .replace(',', '.')
+            .toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it in 0.0..1_000_000.0 }
     fun baseDoubleFromText(text: String): Double = (decimalValue(text) ?: 0.0) / scale.coerceAtLeast(0.0001)
     fun baseOptionalFromText(text: String): Double? = decimalValue(text)?.let { it / scale.coerceAtLeast(0.0001) }
     fun scaledIngredients() = editableIngredients.map { it.scaled(scale) }
