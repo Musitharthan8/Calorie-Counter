@@ -38,6 +38,12 @@ data class FoodAnalysis(
     val cholesterol: Double? = null,
     val caffeine: Double? = null,
     val supplementalNutrients: Map<String, Double> = emptyMap(),
+    /**
+     * Source-authored nutrients that do not have a dedicated legacy FoodAnalysis field.
+     * Units are preserved so regional datasets never need to mislabel concepts such as
+     * INDB free sugar, phosphorus, vitamin B6 or niacin.
+     */
+    val sourceNutrients: Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount> = emptyMap(),
     val sodium: Double? = null,
     val potassium: Double? = null,
     val transFat: Double? = null,
