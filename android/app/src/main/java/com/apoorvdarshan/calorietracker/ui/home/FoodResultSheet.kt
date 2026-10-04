@@ -330,6 +330,51 @@ fun FoodResultSheet(
             servingSizeIsKnown = true
         }
     }
+    fun nutritionWasEdited(): Boolean =
+        editableCalories != reviewMacros.calories ||
+            editableProtein != reviewMacros.protein ||
+            editableCarbs != reviewMacros.carbs ||
+            editableFat != reviewMacros.fat ||
+            editableSugar != analysis.sugar ||
+            editableAddedSugar != analysis.addedSugar ||
+            editableFiber != analysis.fiber ||
+            editableSaturatedFat != analysis.saturatedFat ||
+            editableMonounsaturatedFat != analysis.monounsaturatedFat ||
+            editablePolyunsaturatedFat != analysis.polyunsaturatedFat ||
+            editableCholesterol != analysis.cholesterol ||
+            editableCaffeine != analysis.caffeine ||
+            editableSupplementalNutrients != analysis.supplementalNutrients ||
+            editableSodium != analysis.sodium ||
+            editablePotassium != analysis.potassium ||
+            editableTransFat != analysis.transFat ||
+            editableCalcium != analysis.calcium ||
+            editableIron != analysis.iron ||
+            editableMagnesium != analysis.magnesium ||
+            editableZinc != analysis.zinc ||
+            editableVitaminA != analysis.vitaminA ||
+            editableVitaminC != analysis.vitaminC ||
+            editableVitaminD != analysis.vitaminD ||
+            editableVitaminB12 != analysis.vitaminB12 ||
+            editableVitaminE != analysis.vitaminE ||
+            editableVitaminK != analysis.vitaminK ||
+            editableFolate != analysis.folate ||
+            editableOmega3 != analysis.omega3 ||
+            editableIngredients != analysis.ingredients
+
+    fun provenanceAfterEdits() =
+        if (nutritionWasEdited()) {
+            analysis.nutritionProvenance.map { it.copy(userEdited = true) }
+        } else {
+            analysis.nutritionProvenance
+        }
+
+    fun warningsAfterEdits() =
+        if (nutritionWasEdited()) {
+            (analysis.nutritionWarnings + "Nutrition values were edited after source lookup.").distinct()
+        } else {
+            analysis.nutritionWarnings
+        }
+
     fun editedAnalysis() = analysis.copy(
         name = name.trim().ifEmpty { analysis.name },
         calories = editableCalories,
@@ -376,8 +421,8 @@ fun FoodResultSheet(
         ingredients = editableIngredients,
         productMetadata = analysis.productMetadata,
         mealInterpretation = analysis.mealInterpretation,
-        nutritionProvenance = analysis.nutritionProvenance,
-        nutritionWarnings = analysis.nutritionWarnings
+        nutritionProvenance = provenanceAfterEdits(),
+        nutritionWarnings = warningsAfterEdits()
     )
     fun previewEntry() = FoodEntry(
         name = name.trim().ifEmpty { analysis.name },
@@ -429,8 +474,8 @@ fun FoodResultSheet(
         ingredients = scaledIngredients(),
         productMetadata = analysis.productMetadata,
         mealInterpretation = analysis.mealInterpretation,
-        nutritionProvenance = analysis.nutritionProvenance,
-        nutritionWarnings = analysis.nutritionWarnings
+        nutritionProvenance = provenanceAfterEdits(),
+        nutritionWarnings = warningsAfterEdits()
     )
     var whatIfEntry by rememberSaveable(stateSaver = foodDraftSaver<FoodEntry?>()) { mutableStateOf<FoodEntry?>(null) }
 
