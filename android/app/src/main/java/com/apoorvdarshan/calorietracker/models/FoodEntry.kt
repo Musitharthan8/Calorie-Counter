@@ -33,6 +33,8 @@ data class FoodEntry(
     val caffeine: Double? = null,
     /** Optional sports-nutrition compounds, stored in grams by SupplementalNutrient.storageKey. */
     val supplementalNutrients: Map<String, Double> = emptyMap(),
+    /** Source-authored nutrients without dedicated legacy FoodEntry fields, with units preserved. */
+    val sourceNutrients: Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount> = emptyMap(),
     val sodium: Double? = null,
     val potassium: Double? = null,
     val transFat: Double? = null,
@@ -115,6 +117,7 @@ data class FoodEntry(
         cholesterol = cholesterol,
         caffeine = caffeine,
         supplementalNutrients = supplementalNutrients,
+        sourceNutrients = sourceNutrients,
         sodium = sodium,
         potassium = potassium,
         transFat = transFat,
