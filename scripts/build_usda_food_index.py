@@ -79,6 +79,9 @@ JSON_DATA_TYPE_NAMES = {
 # Foundation JSON may publish measured/calculated energy as 2048/2047 rather than 1008.
 # These are source-authored kcal values, not energy reconstructed by this importer.
 ENERGY_ID_PRECEDENCE = (1008, 2048, 2047)
+MAX_ARCHIVE_MEMBERS = 512
+MAX_ARCHIVE_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024
+MAX_ARCHIVE_COMPRESSION_RATIO = 500
 
 # Stable FoodData Central nutrient ids. Values are canonical app key + canonical storage unit.
 NUTRIENTS = {
@@ -171,6 +174,34 @@ def _finite_nonnegative(value: object) -> float | None:
     return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
+def _validated_zip_infos(path: Path, archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    infos = [info for info in archive.infolist() if not info.is_dir()]
+    if len(infos) > MAX_ARCHIVE_MEMBERS:
+        raise SystemExit(f"USDA archive has too many files: {path}")
+    expanded = 0
+    for info in infos:
+        expanded += info.file_size
+        if expanded > MAX_ARCHIVE_EXPANDED_BYTES:
+            raise SystemExit(f"USDA archive expands beyond supported size: {path}")
+        if info.file_size > 0:
+            if info.compress_size <= 0:
+                raise SystemExit(f"USDA archive has invalid compressed member: {info.filename}")
+            if info.file_size / info.compress_size > MAX_ARCHIVE_COMPRESSION_RATIO:
+                raise SystemExit(f"USDA archive compression ratio is unsafe: {info.filename}")
+    return infos
+
+
+def _safe_extract_zip(path: Path, destination: Path) -> None:
+    base = destination.resolve()
+    with zipfile.ZipFile(path) as archive:
+        infos = _validated_zip_infos(path, archive)
+        for info in infos:
+            target = (base / info.filename).resolve()
+            if target != base and base not in target.parents:
+                raise SystemExit(f"USDA archive contains unsafe path: {info.filename}")
+        archive.extractall(base)
+
+
 def _json_member(path: Path) -> str | None:
     if path.suffix.lower() == ".json":
         return ""
@@ -178,8 +209,8 @@ def _json_member(path: Path) -> str | None:
         return None
     with zipfile.ZipFile(path) as archive:
         members = [
-            name for name in archive.namelist()
-            if not name.endswith("/") and name.lower().endswith(".json")
+            info.filename for info in _validated_zip_infos(path, archive)
+            if info.filename.lower().endswith(".json")
         ]
     if len(members) > 1:
         raise SystemExit(f"Expected at most one JSON file in {path}; found {len(members)}")
@@ -416,8 +447,7 @@ def open_input(path: Path) -> tuple[Path, tempfile.TemporaryDirectory[str] | Non
     if not zipfile.is_zipfile(path):
         raise SystemExit(f"--input must be an extracted FDC CSV directory or ZIP: {path}")
     temp = tempfile.TemporaryDirectory(prefix="calorie-counter-usda-")
-    with zipfile.ZipFile(path) as zf:
-        zf.extractall(temp.name)
+    _safe_extract_zip(path, Path(temp.name))
     return discover_csv_root(Path(temp.name)), temp
 
 
