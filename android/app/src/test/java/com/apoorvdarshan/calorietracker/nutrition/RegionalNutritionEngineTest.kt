@@ -143,6 +143,51 @@ class RegionalNutritionEngineTest {
         assertEquals(analysis.sourceNutrients, restored.sourceNutrients)
     }
 
+    @Test fun unsafeAggregateTotalsFallBackInsteadOfOverflowing() = runBlocking {
+        fun hugeCandidate(name: String) = NutritionCandidate(
+            canonicalName = name,
+            source = NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            sourceFoodId = name,
+            evidence = NutritionEvidence.DATABASE,
+            nutrition = NutrientValues(
+                calories = 1_500_000_000.0,
+                protein = 1.0,
+                carbs = 1.0,
+                fat = 1.0
+            ),
+            referenceQuantity = FoodQuantity(1.0, "serving")
+        )
+        val interpretation = MealInterpretation(
+            rawText = "1 first food and 1 second food",
+            foods = listOf(
+                FoodMention("food-1", "first food", "1 first food", FoodQuantity(1.0, "serving")),
+                FoodMention("food-2", "second food", "1 second food", FoodQuantity(1.0, "serving"))
+            )
+        )
+        val engine = RegionalNutritionEngine(
+            interpreter = LocalMealInterpreter(),
+            resolver = NutritionResolver(
+                listOf(InMemoryNutritionSource(listOf(
+                    hugeCandidate("first food"),
+                    hugeCandidate("second food")
+                )))
+            )
+        ) { fail("Text fallback should not be used directly"); estimate() }
+
+        val analysis = engine.analyzeInterpretation(
+            interpretation = interpretation,
+            fallbackLabel = interpretation.rawText,
+            fallbackEstimate = {
+                FoodAnalysis("fallback", 500, 20.0, 40.0, 20.0, 1.0)
+            }
+        )
+
+        assertEquals(500, analysis.calories)
+        assertEquals(NutritionSourceKind.AI_ESTIMATE, analysis.nutritionProvenance.single().source)
+        assertTrue(analysis.nutritionWarnings.single().contains("combined safely"))
+    }
+
     @Test fun unknownMicronutrientsAreNotInventedAsZeroAndPartialResultsCannotAdapt() = runBlocking {
         val result = NutritionResolver(emptyList()).resolve(LocalMealInterpreter().parse("1 banana"))
         assertTrue(runCatching { result.toFoodAnalysis() }.isFailure)
