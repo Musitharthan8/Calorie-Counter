@@ -29,7 +29,7 @@ import java.util.concurrent.TimeUnit
  * - unknown serving sizes stay on a 100 g basis;
  * - a small cache and per-device request budget protect OFF's public search service.
  */
-class OpenFoodFactsNutritionSource(
+internal class OpenFoodFactsNutritionSource(
     private val client: OkHttpClient = FoodAnalysisService.defaultClient,
     private val searchBaseUrl: HttpUrl = DEFAULT_SEARCH_BASE,
     private val legacyBaseUrl: HttpUrl = DEFAULT_LEGACY_BASE,
