@@ -37,7 +37,8 @@ internal object BundledNutritionSources {
                 )
             }.getOrNull() ?: continue
 
-            val manifest = runCatching { index.manifest }.getOrElse {
+            val manifest = runCatching { index.manifest }.getOrNull()
+            if (manifest == null) {
                 index.close()
                 continue
             }
