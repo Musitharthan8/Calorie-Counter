@@ -6,8 +6,8 @@ Give it either an extracted FoodData Central CSV directory or the official bulk 
 
 Examples:
   python scripts/build_usda_food_index.py \
-      --input ~/Downloads/FoodData_Central_foundation_food_csv_2026-04.zip \
-              ~/Downloads/FoodData_Central_survey_food_csv_2024-10.zip \
+      --input ~/Downloads/FoodData_Central_foundation_food_csv_2026-04-30.zip \
+              ~/Downloads/FoodData_Central_survey_food_csv_2024-10-31.zip \
       --dataset-version foundation-2026-04+fndds-2021-2023
 
   # Tiny synthetic database for importer smoke-testing. Never ship it as production data.
