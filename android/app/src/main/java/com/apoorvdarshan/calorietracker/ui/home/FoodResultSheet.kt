@@ -205,6 +205,10 @@ fun FoodResultSheet(
     var editableCholesterol by rememberSaveable(analysis) { mutableStateOf(analysis.cholesterol) }
     var editableCaffeine by rememberSaveable(analysis) { mutableStateOf(analysis.caffeine) }
     var editableSupplementalNutrients by rememberSaveable(analysis, stateSaver = foodDraftSaver<Map<String, Double>>()) { mutableStateOf(analysis.supplementalNutrients) }
+    var editableSourceNutrients by rememberSaveable(
+        analysis,
+        stateSaver = foodDraftSaver<Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount>>()
+    ) { mutableStateOf(analysis.sourceNutrients) }
     var editableSodium by rememberSaveable(analysis) { mutableStateOf(analysis.sodium) }
     var editablePotassium by rememberSaveable(analysis) { mutableStateOf(analysis.potassium) }
     var editableTransFat by rememberSaveable(analysis) { mutableStateOf(analysis.transFat) }
@@ -260,7 +264,7 @@ fun FoodResultSheet(
     fun baseDoubleFromText(text: String): Double = (decimalValue(text) ?: 0.0) / scale.coerceAtLeast(0.0001)
     fun baseOptionalFromText(text: String): Double? = decimalValue(text)?.let { it / scale.coerceAtLeast(0.0001) }
     fun scaledIngredients() = editableIngredients.map { it.scaled(scale) }
-    fun scaledSourceNutrients() = analysis.sourceNutrients.mapValues { (_, nutrient) ->
+    fun scaledSourceNutrients() = editableSourceNutrients.mapValues { (_, nutrient) ->
         nutrient.copy(amount = nutrient.amount * scale)
     }
     fun sourceNutrientLabel(key: String): String = key
@@ -295,6 +299,21 @@ fun FoodResultSheet(
         editableOmega3 = snapshot.omega3
     }
     fun applyIngredientChanges(displayedIngredients: List<MealIngredient>) {
+        val previousIngredientGrams = editableIngredients.totals().grams
+        val nextIngredientGrams = displayedIngredients.totals().grams
+        if (previousIngredientGrams > 0 && nextIngredientGrams > 0) {
+            val factor = nextIngredientGrams / previousIngredientGrams
+            if (factor.isFinite() && factor > 0) {
+                editableSourceNutrients = editableSourceNutrients.mapNotNull { (key, nutrient) ->
+                    val amount = nutrient.amount * factor
+                    if (amount.isFinite() && amount >= 0) {
+                        key to nutrient.copy(amount = amount)
+                    } else {
+                        null
+                    }
+                }.toMap()
+            }
+        }
         applyMicronutrients(
             MealMicronutrientSnapshot(
                 sugar = editableSugar,
@@ -352,6 +371,7 @@ fun FoodResultSheet(
             editableCholesterol != analysis.cholesterol ||
             editableCaffeine != analysis.caffeine ||
             editableSupplementalNutrients != analysis.supplementalNutrients ||
+            editableSourceNutrients != analysis.sourceNutrients ||
             editableSodium != analysis.sodium ||
             editablePotassium != analysis.potassium ||
             editableTransFat != analysis.transFat ||
@@ -398,6 +418,7 @@ fun FoodResultSheet(
         cholesterol = editableCholesterol,
         caffeine = editableCaffeine,
         supplementalNutrients = editableSupplementalNutrients,
+        sourceNutrients = editableSourceNutrients,
         sodium = editableSodium,
         potassium = editablePotassium,
         transFat = editableTransFat,
