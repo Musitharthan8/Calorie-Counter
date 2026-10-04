@@ -72,9 +72,75 @@ class RegionalNutritionEngineTest {
         assertTrue(old.nutritionProvenance.isEmpty())
         val provenance = NutritionProvenance(NutritionSourceKind.USDA, "Fixture", "test-id",
             NutritionEvidence.DATABASE, false, InterpretationConfidence.HIGH, "1 banana", "banana")
-        val current = old.copy(nutritionProvenance = listOf(provenance))
+        val current = old.copy(
+            nutritionProvenance = listOf(provenance),
+            sourceNutrients = mapOf("phosphorus" to NutrientAmount(25.0, "mg"))
+        )
         val restored = Json.decodeFromString<FoodEntry>(Json.encodeToString(current))
-        assertEquals(provenance, restored.duplicatedForLogging(Instant.now()).nutritionProvenance.single())
+        val relogged = restored.duplicatedForLogging(Instant.now())
+        assertEquals(provenance, relogged.nutritionProvenance.single())
+        assertEquals(NutrientAmount(25.0, "mg"), relogged.sourceNutrients["phosphorus"])
+    }
+
+    @Test fun databaseMicronutrientsMapToLegacyFieldsAndPreserveUnsupportedSourceNutrients() = runBlocking {
+        val candidate = NutritionCandidate(
+            canonicalName = "dal",
+            source = NutritionSourceKind.INDB,
+            sourceName = "INDB fixture",
+            sourceFoodId = "indb-1",
+            evidence = NutritionEvidence.DATABASE,
+            nutrition = NutrientValues(
+                calories = 120.0,
+                protein = 7.0,
+                carbs = 18.0,
+                fat = 3.0,
+                micronutrients = mapOf(
+                    "saturatedFat" to NutrientAmount(0.8, "g"),
+                    "magnesium" to NutrientAmount(36.0, "mg"),
+                    "vitaminA" to NutrientAmount(15.0, "ug"),
+                    "freeSugar" to NutrientAmount(1.2, "g"),
+                    "phosphorus" to NutrientAmount(95.0, "mg"),
+                    "vitaminB6" to NutrientAmount(0.2, "mg"),
+                    "niacin" to NutrientAmount(0.7, "mg")
+                )
+            ),
+            referenceQuantity = FoodQuantity(100.0, "g"),
+            referenceGrams = 100.0
+        )
+        val interpretation = MealInterpretation(
+            rawText = "100 g dal",
+            foods = listOf(
+                FoodMention(
+                    id = "food-1",
+                    name = "dal",
+                    originalWording = "100 g dal",
+                    quantity = FoodQuantity(100.0, "g"),
+                    confidence = InterpretationConfidence.HIGH
+                )
+            )
+        )
+        val engine = RegionalNutritionEngine(
+            interpreter = LocalMealInterpreter(),
+            resolver = NutritionResolver(listOf(InMemoryNutritionSource(listOf(candidate))))
+        ) { fail("Complete database grounding must not fall back"); estimate() }
+
+        val analysis = engine.analyzeInterpretation(
+            interpretation = interpretation,
+            fallbackLabel = interpretation.rawText,
+            fallbackEstimate = { fail("Complete database grounding must not fall back"); estimate() }
+        )
+
+        assertEquals(0.8, analysis.saturatedFat ?: -1.0, 0.0)
+        assertEquals(36.0, analysis.magnesium ?: -1.0, 0.0)
+        assertEquals(15.0, analysis.vitaminA ?: -1.0, 0.0)
+        assertNull(analysis.sugar)
+        assertEquals(NutrientAmount(1.2, "g"), analysis.sourceNutrients["freeSugar"])
+        assertEquals(NutrientAmount(95.0, "mg"), analysis.sourceNutrients["phosphorus"])
+        assertEquals(NutrientAmount(0.2, "mg"), analysis.sourceNutrients["vitaminB6"])
+        assertEquals(NutrientAmount(0.7, "mg"), analysis.sourceNutrients["niacin"])
+
+        val restored = Json.decodeFromString<FoodAnalysis>(Json.encodeToString(analysis))
+        assertEquals(analysis.sourceNutrients, restored.sourceNutrients)
     }
 
     @Test fun unknownMicronutrientsAreNotInventedAsZeroAndPartialResultsCannotAdapt() = runBlocking {
