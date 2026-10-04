@@ -669,6 +669,9 @@ viewModelScope.launch {
                     cholesterol = s(analysis.cholesterol),
                     caffeine = s(analysis.caffeine),
                     supplementalNutrients = analysis.supplementalNutrients.mapValues { (_, value) -> s(value) ?: 0.0 },
+                    sourceNutrients = analysis.sourceNutrients.mapValues { (_, nutrient) ->
+                        nutrient.copy(amount = nutrient.amount * scale)
+                    },
                     sodium = s(analysis.sodium),
                     potassium = s(analysis.potassium),
                     transFat = s(analysis.transFat),
@@ -1157,6 +1160,7 @@ private fun FoodEntry.toAnalysis(): FoodAnalysis = FoodAnalysis(
     cholesterol = cholesterol,
     caffeine = caffeine,
     supplementalNutrients = supplementalNutrients,
+    sourceNutrients = sourceNutrients,
     sodium = sodium,
     potassium = potassium,
     transFat = transFat,
