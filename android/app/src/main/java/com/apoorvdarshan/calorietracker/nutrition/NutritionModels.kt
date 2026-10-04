@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 /** Order is the product's preferred source hierarchy, not a claim of dataset availability. */
 @Serializable
 enum class NutritionSourceKind {
-    PERSONAL, SG_FOOD_ID, MY_FCD, IFCT, BRAND, OPEN_FOOD_FACTS, USDA, AI_ESTIMATE
+    PERSONAL, SG_FOOD_ID, MY_FCD, INDB, IFCT, BRAND, OPEN_FOOD_FACTS, USDA, AI_ESTIMATE
 }
 
 @Serializable
