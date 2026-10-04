@@ -21,10 +21,14 @@ data class NutritionProvenance(
     val confidence: InterpretationConfidence,
     val originalWording: String,
     val canonicalName: String,
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+    val datasetVersion: String? = null,
+    val license: String? = null,
+    val attribution: String? = null
 )
 
 /** Values describe one explicit reference portion. Optional nutrients retain their units. */
+@Serializable
 data class NutrientValues(
     val calories: Double,
     val protein: Double,
@@ -41,6 +45,7 @@ data class NutrientValues(
     }
 }
 
+@Serializable
 data class NutrientAmount(val amount: Double, val unit: String) {
     init { require(amount.isFinite() && amount >= 0 && unit in setOf("g", "mg", "ug")) }
 }
@@ -52,6 +57,9 @@ data class NutritionCandidate(
     val sourceName: String,
     val sourceFoodId: String? = null,
     val sourceUrl: String? = null,
+    val datasetVersion: String? = null,
+    val license: String? = null,
+    val attribution: String? = null,
     val evidence: NutritionEvidence,
     val nutrition: NutrientValues,
     val referenceQuantity: FoodQuantity,
