@@ -2,9 +2,15 @@
 """Build a compact USDA FoodData Central Foundation + FNDDS nutrition index.
 
 This script intentionally has no third-party Python dependencies and does not download data.
-Give it either an extracted FoodData Central CSV directory or the official bulk CSV ZIP.
+Give it official FoodData Central Foundation/FNDDS JSON ZIPs/files (preferred) or CSV ZIPs/directories.
 
-Examples:
+Preferred, much smaller official JSON inputs:
+  python scripts/build_usda_food_index.py \
+      --input ~/Downloads/FoodData_Central_foundation_food_json_2026-04-30.zip \
+              ~/Downloads/FoodData_Central_survey_food_json_2024-10-31.zip \
+      --dataset-version foundation-2026-04+fndds-2021-2023
+
+CSV remains supported for reproducibility/backward compatibility:
   python scripts/build_usda_food_index.py \
       --input ~/Downloads/FoodData_Central_foundation_food_csv_2026-04-30.zip \
               ~/Downloads/FoodData_Central_survey_food_csv_2024-10-31.zip \
@@ -35,7 +41,6 @@ import hashlib
 import json
 import math
 import re
-import shutil
 import sqlite3
 import tempfile
 import zipfile
@@ -63,6 +68,17 @@ SOURCE_KIND = "USDA"
 LICENSE = "CC0 1.0"
 ATTRIBUTION = "U.S. Department of Agriculture, Agricultural Research Service, FoodData Central"
 ALLOWED_DATA_TYPES = {"foundation_food", "survey_fndds_food"}
+JSON_ROOT_DATA_TYPES = {
+    "FoundationFoods": "foundation_food",
+    "SurveyFoods": "survey_fndds_food",
+}
+JSON_DATA_TYPE_NAMES = {
+    "foundation_food": "Foundation",
+    "survey_fndds_food": "Survey (FNDDS)",
+}
+# Foundation JSON may publish measured/calculated energy as 2048/2047 rather than 1008.
+# These are source-authored kcal values, not energy reconstructed by this importer.
+ENERGY_ID_PRECEDENCE = (1008, 2048, 2047)
 
 # Stable FoodData Central nutrient ids. Values are canonical app key + canonical storage unit.
 NUTRIENTS = {
@@ -114,6 +130,9 @@ UNIT_PATTERNS = [
     (re.compile(r"\bcontainers?\b", re.I), "container"),
     (re.compile(r"\bpackets?\b", re.I), "packet"),
     (re.compile(r"\bcans?\b", re.I), "can"),
+    (re.compile(r"\bfl\s*\.?\s*oz\b", re.I), "fl oz"),
+    (re.compile(r"\bounces?\b|\boz\b", re.I), "oz"),
+    (re.compile(r"\bglasses?\b", re.I), "glass"),
     (re.compile(r"\bservings?\b", re.I), "serving"),
     (re.compile(r"\blarge\b", re.I), "large"),
     (re.compile(r"\bmedium\b", re.I), "medium"),
