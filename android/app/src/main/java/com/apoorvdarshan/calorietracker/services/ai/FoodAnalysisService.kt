@@ -464,6 +464,69 @@ class FoodAnalysisService(
         ).copy(progressiveMeal = progressiveMeal)
     }
 
+    /**
+     * Experimental grounded photo path. Not yet wired to the default camera UI.
+     *
+     * One vision call identifies foods/portions without nutrition; the regional resolver then owns
+     * the numbers. If interpretation or complete grounding fails, the existing photo estimator is
+     * preserved as an explicitly-labelled fallback.
+     */
+    internal suspend fun analyzeGroundedFoodPhotos(
+        imageBytesList: List<ByteArray>,
+        description: String? = null,
+        progressiveMeal: Boolean = false
+    ): FoodAnalysis {
+        val images = imageBytesList.filter { it.isNotEmpty() }.take(10)
+        if (images.isEmpty()) throw AiError.InvalidResponse
+        val inputLabel = description?.trim()?.takeIf { it.isNotEmpty() }?.take(4000) ?: "Photo meal"
+        val photoInterpreter = com.apoorvdarshan.calorietracker.nutrition.AiPhotoMealInterpreter {
+                prompt, suppliedImages ->
+            callAi(prompt, suppliedImages)
+        }
+
+        val interpretation = try {
+            photoInterpreter.interpret(
+                imageBytesList = images,
+                description = description,
+                progressiveMeal = progressiveMeal
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return analyzeFood(images, description, progressiveMeal).copy(
+                nutritionProvenance = listOf(
+                    com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+                        source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.AI_ESTIMATE,
+                        sourceName = "AI estimate",
+                        evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.AI_ESTIMATE,
+                        estimated = true,
+                        confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.LOW,
+                        originalWording = inputLabel,
+                        canonicalName = "Photo meal"
+                    )
+                ),
+                nutritionWarnings = listOf(
+                    "Structured photo interpretation was unavailable. Nutrition is an AI estimate."
+                )
+            )
+        }
+
+        val engine = com.apoorvdarshan.calorietracker.nutrition.RegionalNutritionEngine(
+            interpreter = com.apoorvdarshan.calorietracker.nutrition.AiMealInterpreter { prompt ->
+                callAi(prompt, emptyList())
+            },
+            resolver = com.apoorvdarshan.calorietracker.nutrition.NutritionResolver(nutritionSources),
+            estimate = ::estimateText
+        )
+        return engine.analyzeInterpretation(
+            interpretation = interpretation,
+            fallbackLabel = inputLabel,
+            fallbackEstimate = {
+                analyzeFood(images, description, progressiveMeal)
+            }
+        ).copy(progressiveMeal = progressiveMeal)
+    }
+
     suspend fun analyzeNutritionLabel(imageBytes: ByteArray, servingGrams: Double): FoodAnalysis {
         val prompt = """
             Read this nutrition facts label and extract per-100g values. If the label only shows per-serving, normalize using the serving size listed on the label.
