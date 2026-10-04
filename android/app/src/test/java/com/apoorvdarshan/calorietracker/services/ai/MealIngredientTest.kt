@@ -65,6 +65,18 @@ class MealIngredientTest {
     }
 
     @Test
+    fun ingredientMathRejectsOverflowAndNonFiniteScaling() {
+        val ingredient = MealIngredient("Food", 100.0, Int.MAX_VALUE, 10.0, 10.0, 10.0)
+
+        assertTrue(runCatching { ingredient.scaled(2.0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { ingredient.scaled(Double.POSITIVE_INFINITY) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching { listOf(ingredient, ingredient).totals() }
+                .exceptionOrNull() is IllegalArgumentException
+        )
+    }
+
+    @Test
     fun oldFoodEntryJsonWithoutIngredientsStillDecodes() {
         val json = """{"name":"Apple","calories":95,"protein":0.5,"carbs":25.0,"fat":0.3,"source":"manual"}"""
         val entry = Json { ignoreUnknownKeys = true }.decodeFromString<FoodEntry>(json)
