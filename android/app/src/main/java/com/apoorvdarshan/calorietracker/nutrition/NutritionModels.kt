@@ -25,6 +25,8 @@ data class NutritionProvenance(
     val datasetVersion: String? = null,
     val license: String? = null,
     val attribution: String? = null,
+    /** True when the amount/weight was estimated or derived rather than directly measured/stated. */
+    val portionEstimated: Boolean = false,
     val userEdited: Boolean = false
 )
 
@@ -70,7 +72,10 @@ data class NutritionCandidate(
     val preparation: String? = null,
     val supportedModifiers: Set<String> = emptySet(),
     val reliability: Double = 1.0,
-    val estimated: Boolean = false
+    /** True when the nutrient values themselves are estimates rather than source-authored values. */
+    val estimated: Boolean = false,
+    /** True when the candidate's reference household portion mass is derived/estimated. */
+    val referencePortionEstimated: Boolean = false
 ) {
     init {
         require(canonicalName.isNotBlank() && sourceName.isNotBlank())
