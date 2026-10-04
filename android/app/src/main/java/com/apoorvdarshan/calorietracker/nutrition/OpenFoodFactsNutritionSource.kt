@@ -167,7 +167,7 @@ class OpenFoodFactsNutritionSource(
             .addHeader("Accept", "application/json")
             .build()
         return try {
-            client.newCall(request).await().use { response ->
+            http.newCall(request).await().use { response ->
                 when {
                     response.code == 429 -> SearchReply.RateLimited
                     response.code >= 500 || !response.isSuccessful -> SearchReply.Unavailable
@@ -274,6 +274,6 @@ class OpenFoodFactsNutritionSource(
         private const val SEARCH_WINDOW_MS = 60_000L
         private const val KJ_TO_KCAL = 0.23900573614
         private val USER_AGENT: String
-            get() = "CalorieCounter/${BuildConfig.VERSION_NAME} (Fud AI fork; Open Food Facts nutrition resolver)"
+            get() = "CalorieCounter/${BuildConfig.VERSION_NAME} (https://github.com/Musitharthan8/Calorie-Counter)"
     }
 }
