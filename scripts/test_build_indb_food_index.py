@@ -242,6 +242,15 @@ class IndbImporterTest(unittest.TestCase):
                 self.assertIn("freeSugar", micros)
                 self.assertNotIn("sugar", micros)
 
+    def test_comma_qualified_food_identity_is_not_collapsed_to_generic_name(self) -> None:
+        canonical, aliases = indb.canonical_name_and_aliases(
+            "Dosa, masala (Masala Dosa)"
+        )
+        self.assertEqual("Dosa, masala", canonical)
+        self.assertIn("Masala Dosa", aliases)
+        self.assertIn("Dosa, masala (Masala Dosa)", aliases)
+        self.assertNotIn("Dosa", aliases)
+
     def test_common_serving_units_are_normalized_without_inventing_weights(self) -> None:
         self.assertEqual("tbsp", indb.normalize_serving_unit("tablespoons"))
         self.assertEqual("piece", indb.normalize_serving_unit("pieces"))
