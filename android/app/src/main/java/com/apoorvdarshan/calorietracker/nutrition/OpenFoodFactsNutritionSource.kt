@@ -54,16 +54,20 @@ internal class OpenFoodFactsNutritionSource(
     private val recentSearches = ArrayDeque<Long>()
 
     override suspend fun search(mention: FoodMention): List<NutritionCandidate> {
+        // Automatic resolution is intentionally brand-gated. An unbranded query such as
+        // "protein bar" can match dozens of unrelated community products; generic foods should
+        // fall through to regional/USDA sources or a user-facing product search instead.
+        val explicitBrand = mention.brand?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyList()
         val query = mention.name.trim()
         if (query.length < 2) return emptyList()
-        val cacheKey = normaliseFoodName(listOfNotNull(mention.brand, query).joinToString(" "))
+        val cacheKey = normaliseFoodName(listOf(explicitBrand, query).joinToString(" "))
         cached(cacheKey)?.let { return it }
 
         val hits = if (searchOverride != null) {
-            searchOverride.invoke(query, mention.brand, MAX_RESULTS)
+            searchOverride.invoke(query, explicitBrand, MAX_RESULTS)
         } else {
             if (!acquireSearchBudget()) return emptyList()
-            searchRemote(query, mention.brand, MAX_RESULTS)
+            searchRemote(query, explicitBrand, MAX_RESULTS)
         }
 
         val candidates = hits.mapNotNull { hit -> hit.toCandidate(mention) }
