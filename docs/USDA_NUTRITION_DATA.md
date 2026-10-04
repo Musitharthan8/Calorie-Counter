@@ -10,10 +10,20 @@ hand-edited.
 
 Verified against the USDA FoodData Central download page on 2026-10-04:
 
-- Foundation Foods — April 2026 CSV
-  - archive: `FoodData_Central_foundation_food_csv_2026-04-30.zip`
-- FNDDS — FNDDS 2021-2023, October 2024 CSV
-  - archive: `FoodData_Central_survey_food_csv_2024-10-31.zip`
+- Foundation Foods — April 2026 JSON (preferred)
+  - archive: `FoodData_Central_foundation_food_json_2026-04-30.zip`
+  - USDA currently lists about 459 KB zipped / 6.5 MB extracted.
+- FNDDS — FNDDS 2021-2023, October 2024 JSON (preferred)
+  - archive: `FoodData_Central_survey_food_json_2024-10-31.zip`
+  - USDA currently lists about 3.7 MB zipped / 64 MB extracted.
+
+The equivalent CSV releases remain supported by the importer:
+- `FoodData_Central_foundation_food_csv_2026-04-30.zip`
+- `FoodData_Central_survey_food_csv_2024-10-31.zip`
+
+JSON is preferred for normal builds because USDA currently lists the FNDDS CSV at roughly 200 MB
+zipped / 1.6 GB extracted. The JSON release carries the same FNDDS data type in a far smaller
+build-time representation.
 
 Official download page:
 https://fdc.nal.usda.gov/download-datasets/
@@ -25,14 +35,17 @@ Open Food Facts owns the branded-product role in this application.
 
 ## Build
 
-Download the two official CSV archives yourself, then from the repository root run:
+Download the two official JSON archives yourself, then from the repository root run:
 
 ```bash
 python scripts/build_usda_food_index.py \
-  --input ~/Downloads/FoodData_Central_foundation_food_csv_2026-04-30.zip \
-          ~/Downloads/FoodData_Central_survey_food_csv_2024-10-31.zip \
+  --input ~/Downloads/FoodData_Central_foundation_food_json_2026-04-30.zip \
+          ~/Downloads/FoodData_Central_survey_food_json_2024-10-31.zip \
   --dataset-version foundation-2026-04+fndds-2021-2023
 ```
+
+The importer also accepts the matching official CSV ZIPs/directories. JSON and CSV inputs may be
+mixed, but duplicate FDC IDs across inputs fail the build rather than silently overwriting records.
 
 Default outputs:
 
@@ -76,7 +89,8 @@ Optional micronutrients remain optional. Missing values stay missing, not zero.
 
 ## Portions
 
-`food_portion.csv` is used only when USDA explicitly supplies a positive `gram_weight`.
+USDA portion data are used only when USDA explicitly supplies a positive gram weight. In CSV this
+comes from `food_portion.csv`; in JSON it comes from `foodPortions[].gramWeight`.
 
 Common household measures such as cup, tablespoon, teaspoon, slice, piece, bowl, plate, container,
 packet and can are normalised to the app's unit vocabulary.
@@ -111,6 +125,8 @@ It covers:
 
 - fixture database schema and manifest checksum;
 - modern FDC nutrient IDs versus legacy nutrient numbers;
+- Foundation source-authored energy IDs 2048/2047 versus FNDDS/standard 1008 energy;
+- official FoundationFoods / SurveyFoods JSON object shapes and zipped JSON input;
 - complete macro import;
 - micronutrient preservation;
 - explicit portion parsing;
@@ -118,6 +134,8 @@ It covers:
 - merging Foundation + FNDDS inputs;
 - exclusion of branded rows;
 - conservative alias generation;
+- FNDDS portion descriptions such as `1 fl oz` when measureUnit is undetermined;
+- duplicate FDC IDs across input archives;
 - unknown portion wording.
 
 The repository's `Quality checks` workflow includes this suite in a separate
