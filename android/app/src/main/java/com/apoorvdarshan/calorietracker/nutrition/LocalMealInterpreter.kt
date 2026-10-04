@@ -79,10 +79,23 @@ class LocalMealInterpreter : MealInterpreter {
         private val numbers = mapOf("a" to 1.0, "an" to 1.0, "one" to 1.0, "two" to 2.0,
             "three" to 3.0, "four" to 4.0, "five" to 5.0, "half" to 0.5, "quarter" to 0.25)
         private val quantityPrefix = Regex("^(\\d+(?:\\.\\d+)?|one|two|three|four|five|half|quarter|an|a)\\s+", RegexOption.IGNORE_CASE)
-        private val unitPrefix = Regex("^(cups?|pieces?|plates?|bowls?|buckets?|servings?|ml|g|grams?|kg|litres?)\\b\\s*", RegexOption.IGNORE_CASE)
-        fun normaliseUnit(unit: String): String = when (val value = unit.trim().lowercase(java.util.Locale.ROOT)) {
+        private val unitPrefix = Regex(
+            "^(cups?|pieces?|slices?|plates?|bowls?|buckets?|servings?|containers?|packets?|cans?|" +
+                "tbsp|tablespoons?|tsp|teaspoons?|ml|millilit(?:er|re)s?|g|grams?|kg|" +
+                "l|litres?|liters?|fl\\s*oz|oz)\\b\\s*",
+            RegexOption.IGNORE_CASE
+        )
+        fun normaliseUnit(unit: String): String = when (
+            val value = unit.trim().lowercase(java.util.Locale.ROOT).replace(Regex("\\s+"), " ")
+        ) {
             "grams", "gram" -> "g"
-            "cups", "pieces", "plates", "bowls", "buckets", "servings", "litres" -> value.dropLast(1)
+            "milliliter", "milliliters", "millilitre", "millilitres" -> "ml"
+            "liter", "liters", "litre", "litres", "l" -> "litre"
+            "tablespoon", "tablespoons" -> "tbsp"
+            "teaspoon", "teaspoons" -> "tsp"
+            "fl  oz", "fl oz" -> "fl oz"
+            "cups", "pieces", "slices", "plates", "bowls", "buckets", "servings",
+            "containers", "packets", "cans" -> value.dropLast(1)
             else -> value
         }
     }
