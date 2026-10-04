@@ -121,22 +121,27 @@ class CanonicalOfflineNutritionSource(
             NutritionSourceKind.OPEN_FOOD_FACTS,
             NutritionSourceKind.AI_ESTIMATE
         ))
-        require(searchLimit in 1..25)
+        require(searchLimit in 1..50)
     }
 
     override suspend fun search(mention: FoodMention): List<NutritionCandidate> {
         val query = mention.name.trim()
         if (query.isEmpty()) return emptyList()
-        return index.search(query, searchLimit)
+        val matchingRecords = index.search(query, searchLimit + 1)
             .asSequence()
             .filter { it.source == sourceKind }
             .filter { record -> record.exactlyNames(mention.name) }
             .filter { record ->
                 mention.brand == null || record.brand?.equals(mention.brand, ignoreCase = true) == true
             }
-            .mapNotNull { record -> record.toCandidateFor(mention, manifest) }
-            .take(searchLimit)
+            .take(searchLimit + 1)
             .toList()
+
+        // Hitting the cap means there may be additional equally named foods hidden by the query
+        // limit. Never turn a truncated candidate set into false certainty.
+        if (matchingRecords.size > searchLimit) return emptyList()
+
+        return matchingRecords.mapNotNull { record -> record.toCandidateFor(mention, manifest) }
     }
 
     private fun CanonicalFoodRecord.exactlyNames(name: String): Boolean {
