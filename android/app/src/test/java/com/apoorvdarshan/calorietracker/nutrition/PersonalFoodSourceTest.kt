@@ -56,6 +56,48 @@ class PersonalFoodSourceTest {
         assertEquals(favourite.id.toString(), candidates.single().sourceFoodId)
     }
 
+    @Test fun savedDatabaseFoodKeepsOriginalAttributionWhenReused() = runBlocking {
+        val provenance = NutritionProvenance(
+            source = NutritionSourceKind.USDA,
+            sourceName = "USDA FoodData Central",
+            foodId = "123",
+            evidence = NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = InterpretationConfidence.HIGH,
+            originalWording = "1 banana",
+            canonicalName = "banana",
+            sourceUrl = "https://fdc.nal.usda.gov/",
+            datasetVersion = "fixture-1",
+            license = "CC0 1.0",
+            attribution = "USDA FoodData Central"
+        )
+        val saved = food("banana", 105).copy(
+            nutritionProvenance = listOf(provenance),
+            sourceNutrients = mapOf("phosphorus" to NutrientAmount(22.0, "mg"))
+        )
+        val source = PersonalFoodSource { listOf(saved) }
+        val mention = FoodMention(
+            id = "1",
+            name = "banana",
+            originalWording = "1 banana",
+            quantity = FoodQuantity(1.0, "serving")
+        )
+
+        val resolved = NutritionResolver(listOf(source)).resolve(
+            MealInterpretation(mention.originalWording, listOf(mention))
+        )
+
+        assertTrue(resolved.complete)
+        val match = resolved.matches.single()
+        assertEquals(NutritionSourceKind.PERSONAL, match.provenance.source)
+        assertEquals(NutritionEvidence.SAVED_FOOD, match.provenance.evidence)
+        assertEquals("fixture-1", match.provenance.datasetVersion)
+        assertEquals("CC0 1.0", match.provenance.license)
+        assertEquals("USDA FoodData Central", match.provenance.attribution)
+        assertTrue(match.provenance.sourceName.contains("USDA FoodData Central"))
+        assertEquals(NutrientAmount(22.0, "mg"), match.nutrition.micronutrients["phosphorus"])
+    }
+
     @Test fun unrelatedPersonalNamesNeverFuzzyMatch() = runBlocking {
         val source = PersonalFoodSource { listOf(food("kopi C kosong", 60)) }
         val candidates = source.search(
