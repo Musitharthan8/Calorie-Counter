@@ -24,7 +24,8 @@ data class NutritionProvenance(
     val sourceUrl: String? = null,
     val datasetVersion: String? = null,
     val license: String? = null,
-    val attribution: String? = null
+    val attribution: String? = null,
+    val userEdited: Boolean = false
 )
 
 /** Values describe one explicit reference portion. Optional nutrients retain their units. */
