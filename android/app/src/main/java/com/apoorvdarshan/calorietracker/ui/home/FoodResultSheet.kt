@@ -476,7 +476,15 @@ fun FoodResultSheet(
                 item {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            analysis.nutritionProvenance.map { it.sourceName }.distinct().joinToString(" • "),
+                            analysis.nutritionProvenance
+                                .map { provenance ->
+                                    provenance.datasetVersion
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { "${provenance.sourceName} ($it)" }
+                                        ?: provenance.sourceName
+                                }
+                                .distinct()
+                                .joinToString(" • "),
                             style = MaterialTheme.typography.labelMedium
                         )
                         analysis.nutritionWarnings.forEach { warning ->
