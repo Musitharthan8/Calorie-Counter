@@ -88,6 +88,8 @@ internal class OpenFoodFactsNutritionSource(
             sourceName = "Open Food Facts",
             sourceFoodId = barcode,
             sourceUrl = "https://world.openfoodfacts.org/product/$barcode",
+            license = "ODbL 1.0",
+            attribution = "Open Food Facts contributors",
             evidence = NutritionEvidence.PRODUCT_LABEL,
             nutrition = values,
             referenceQuantity = if (serving != null) FoodQuantity(1.0, "serving")
