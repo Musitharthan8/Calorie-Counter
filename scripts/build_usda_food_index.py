@@ -6,8 +6,9 @@ Give it either an extracted FoodData Central CSV directory or the official bulk 
 
 Examples:
   python scripts/build_usda_food_index.py \
-      --input ~/Downloads/FoodData_Central_csv_2026-*.zip \
-      --dataset-version fdc-2026-xx-xx
+      --input ~/Downloads/FoodData_Central_foundation_food_csv_2026-04.zip \
+              ~/Downloads/FoodData_Central_survey_food_csv_2024-10.zip \
+      --dataset-version foundation-2026-04+fndds-2021-2023
 
   # Tiny synthetic database for importer smoke-testing. Never ship it as production data.
   python scripts/build_usda_food_index.py --fixture --output build/usda-fixture.sqlite
@@ -410,10 +411,18 @@ def write_manifest(
     return path
 
 
-def build_from_csv(csv_root: Path, output: Path, dataset_version: str) -> int:
-    foods = read_foods(csv_root)
-    nutrients = read_nutrients(csv_root, foods)
-    portions = read_portions(csv_root, foods)
+def build_from_csv_roots(csv_roots: list[Path], output: Path, dataset_version: str) -> int:
+    foods: dict[int, dict[str, str]] = {}
+    nutrients: dict[int, dict[str, tuple[float, str]]] = {}
+    portions: dict[int, list[dict[str, object]]] = {}
+
+    for csv_root in csv_roots:
+        source_foods = read_foods(csv_root)
+        source_nutrients = read_nutrients(csv_root, source_foods)
+        source_portions = read_portions(csv_root, source_foods)
+        foods.update(source_foods)
+        nutrients.update(source_nutrients)
+        portions.update(source_portions)
 
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
@@ -483,7 +492,12 @@ def build_fixture(output: Path) -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=Path, help="Official FDC bulk CSV ZIP or extracted directory")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        nargs="+",
+        help="One or more official FDC CSV ZIPs/extracted directories (normally Foundation + FNDDS)",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--dataset-version", help="Pinned upstream release/version string")
     parser.add_argument("--fixture", action="store_true", help="Build tiny synthetic smoke-test database")
@@ -499,14 +513,20 @@ def main() -> int:
         print(f"Wrote synthetic USDA fixture: {output} ({count} rows)")
         return 0
 
-    if args.input is None or not args.dataset_version:
+    if not args.input or not args.dataset_version:
         raise SystemExit("--input and --dataset-version are required unless --fixture is used")
 
-    csv_root, temp = open_input(args.input.resolve())
+    roots: list[Path] = []
+    temps: list[tempfile.TemporaryDirectory[str]] = []
     try:
-        count = build_from_csv(csv_root, output, args.dataset_version.strip())
+        for input_path in args.input:
+            csv_root, temp = open_input(input_path.resolve())
+            roots.append(csv_root)
+            if temp is not None:
+                temps.append(temp)
+        count = build_from_csv_roots(roots, output, args.dataset_version.strip())
     finally:
-        if temp is not None:
+        for temp in temps:
             temp.cleanup()
     manifest = output.with_suffix(".manifest.json")
     print(f"Wrote USDA index: {output} ({count} complete-macro rows)")
