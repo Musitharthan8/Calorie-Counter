@@ -202,6 +202,24 @@ class UsdaImporterTest(unittest.TestCase):
                 ).fetchone()
                 self.assertEqual((1.0, "cup", 158.0, 1), portion)
 
+    def test_foundation_csv_accepts_published_2048_energy_without_deriving_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = make_fdc_dir(
+                Path(temp) / "foundation",
+                fdc_id=2048,
+                description="Foundation energy fixture",
+            )
+            path = root / "food_nutrient.csv"
+            rows = list(csv.DictReader(path.open(newline="", encoding="utf-8")))
+            for row in rows:
+                if row["nutrient_id"] == "1008":
+                    row["nutrient_id"] = "2048"
+                    row["amount"] = "129.0"
+            write_csv(path, ["fdc_id", "nutrient_id", "amount"], rows)
+
+            values = usda.read_nutrients(root, usda.read_foods(root))[2048]
+            self.assertEqual((129.0, "kcal"), values["calories"])
+
     def test_incomplete_macro_row_is_rejected_not_repaired(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = make_fdc_dir(
