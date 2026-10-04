@@ -127,6 +127,45 @@ class MealIngredientTest {
     }
 
     @Test
+    fun foodParserRejectsMissingOrNegativeRequiredNutrition() {
+        val missingFat = """{"name":"Meal","calories":500,"protein":20,"carbs":50}"""
+        val negativeProtein = """{"name":"Meal","calories":500,"protein":-1,"carbs":50,"fat":20}"""
+
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(missingFat) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(negativeProtein) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun foodParserRejectsOverflowingCaloriesAndInvalidServingMass() {
+        val hugeCalories = """{"name":"Meal","calories":999999999999,"protein":20,"carbs":50,"fat":20}"""
+        val badServing = """{"name":"Meal","calories":500,"protein":20,"carbs":50,"fat":20,"serving_size_grams":-10}"""
+
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(hugeCalories) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(badServing) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun invalidIngredientPayloadCannotSaturateMealCalories() {
+        val json = """
+            {
+              "name":"Meal",
+              "calories":500,
+              "protein":20,
+              "carbs":50,
+              "fat":20,
+              "ingredients":[
+                {"name":"bad","grams":100,"calories":999999999999,"protein":1,"carbs":1,"fat":1}
+              ]
+            }
+        """.trimIndent()
+
+        val analysis = FoodJsonParser.parseFoodResponse(json).analysis
+
+        assertTrue(analysis.ingredients.isEmpty())
+        assertEquals(500, analysis.calories)
+    }
+
+    @Test
     fun progressiveMealPromptUsesChronologicalScaleDifferences() {
         val prompt = multiPhotoAnalysisPrompt(
             progressiveMeal = true,
