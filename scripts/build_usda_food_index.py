@@ -684,6 +684,72 @@ def write_manifest(
     return path
 
 
+def build_from_inputs(input_paths: list[Path], output: Path, dataset_version: str) -> int:
+    foods: dict[int, dict[str, str]] = {}
+    nutrients: dict[int, dict[str, tuple[float, str]]] = {}
+    portions: dict[int, list[dict[str, object]]] = {}
+    temps: list[tempfile.TemporaryDirectory[str]] = []
+
+    def merge(
+        source_foods: dict[int, dict[str, str]],
+        source_nutrients: dict[int, dict[str, tuple[float, str]]],
+        source_portions: dict[int, list[dict[str, object]]],
+        source_path: Path,
+    ) -> None:
+        duplicates = foods.keys() & source_foods.keys()
+        if duplicates:
+            sample = ", ".join(str(value) for value in sorted(duplicates)[:5])
+            raise SystemExit(f"Duplicate USDA FDC IDs across inputs ({sample}) while reading {source_path}")
+        foods.update(source_foods)
+        nutrients.update(source_nutrients)
+        portions.update(source_portions)
+
+    try:
+        for input_path in input_paths:
+            resolved = input_path.resolve()
+            json_member = _json_member(resolved) if resolved.is_file() else None
+            if resolved.suffix.lower() == ".json" or json_member is not None:
+                merge(*read_json_dataset(resolved), source_path=resolved)
+                continue
+
+            csv_root, temp = open_input(resolved)
+            if temp is not None:
+                temps.append(temp)
+            source_foods = read_foods(csv_root)
+            merge(
+                source_foods,
+                read_nutrients(csv_root, source_foods),
+                read_portions(csv_root, source_foods),
+                source_path=resolved,
+            )
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        if output.exists():
+            output.unlink()
+        conn = sqlite3.connect(output)
+        try:
+            create_schema(conn)
+            count = 0
+            for fdc_id in sorted(foods):
+                if write_food(
+                    conn,
+                    fdc_id,
+                    foods[fdc_id],
+                    nutrients.get(fdc_id, {}),
+                    portions.get(fdc_id, []),
+                ):
+                    count += 1
+            conn.commit()
+            conn.execute("PRAGMA optimize")
+        finally:
+            conn.close()
+        write_manifest(output, dataset_version, count)
+        return count
+    finally:
+        for temp in temps:
+            temp.cleanup()
+
+
 def build_from_csv_roots(csv_roots: list[Path], output: Path, dataset_version: str) -> int:
     foods: dict[int, dict[str, str]] = {}
     nutrients: dict[int, dict[str, tuple[float, str]]] = {}
@@ -769,7 +835,7 @@ def parse_args() -> argparse.Namespace:
         "--input",
         type=Path,
         nargs="+",
-        help="One or more official FDC CSV ZIPs/extracted directories (normally Foundation + FNDDS)",
+        help="Official FDC Foundation/FNDDS JSON files/ZIPs (preferred) or CSV ZIPs/directories",
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--dataset-version", help="Pinned upstream release/version string")
@@ -789,18 +855,7 @@ def main() -> int:
     if not args.input or not args.dataset_version:
         raise SystemExit("--input and --dataset-version are required unless --fixture is used")
 
-    roots: list[Path] = []
-    temps: list[tempfile.TemporaryDirectory[str]] = []
-    try:
-        for input_path in args.input:
-            csv_root, temp = open_input(input_path.resolve())
-            roots.append(csv_root)
-            if temp is not None:
-                temps.append(temp)
-        count = build_from_csv_roots(roots, output, args.dataset_version.strip())
-    finally:
-        for temp in temps:
-            temp.cleanup()
+    count = build_from_inputs(args.input, output, args.dataset_version.strip())
     manifest = output.with_suffix(".manifest.json")
     print(f"Wrote USDA index: {output} ({count} complete-macro rows)")
     print(f"Wrote manifest: {manifest}")
