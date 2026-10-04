@@ -242,12 +242,15 @@ class AppContainer(app: FudAIApp) {
 
     val foodAnalysis = FoodAnalysisService(
         prefs, keyStore, localGemma = localGemma,
-        nutritionSources = listOf(
-            com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
-                foodRepository.migratedFavorites()
-            },
-            com.apoorvdarshan.calorietracker.nutrition.OpenFoodFactsNutritionSource()
-        )
+        nutritionSources = buildList {
+            add(
+                com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
+                    foodRepository.migratedFavorites()
+                }
+            )
+            add(com.apoorvdarshan.calorietracker.nutrition.OpenFoodFactsNutritionSource())
+            addAll(com.apoorvdarshan.calorietracker.nutrition.BundledNutritionSources.create(app))
+        }
     )
     val chatService = ChatService(prefs, keyStore, localGemma = localGemma)
     val speechService = SpeechService(prefs, keyStore, localWhisper = localWhisper)
