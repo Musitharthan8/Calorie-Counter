@@ -167,7 +167,16 @@ class CanonicalOfflineNutritionSource(
         val nutrition: NutrientValues
 
         if (portion != null) {
-            referenceQuantity = FoodQuantity(portion.amount, portion.unit)
+            referenceQuantity = if (quantityUnit == "serving" &&
+                LocalMealInterpreter.normaliseUnit(portion.unit) != "serving"
+            ) {
+                // "1 banana" / "1 yoghurt" is a count-like serving request. A source-declared
+                // default portion may be named "medium", "container", etc.; expose that mass as
+                // one serving without claiming the words themselves are equivalent units.
+                FoodQuantity(1.0, "serving")
+            } else {
+                FoodQuantity(portion.amount, portion.unit)
+            }
             referenceGrams = portion.grams
             nutrition = nutritionPer100g.scaled(portion.grams / 100.0)
         } else {
