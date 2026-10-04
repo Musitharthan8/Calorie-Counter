@@ -95,15 +95,15 @@ def canonical_name_and_aliases(food_name: str) -> tuple[str, list[str]]:
     raw = SPACE_RE.sub(" ", food_name.strip())
     local_match = ALIAS_RE.search(raw)
     without_local = ALIAS_RE.sub("", raw).strip()
-    canonical = without_local.split(",", 1)[0].strip() or without_local or raw
-    canonical = canonical[:120]
 
-    candidates = [raw, without_local]
+    # Comma-qualified wording can carry the preparation identity ("Dosa, masala",
+    # "Rice, lemon", etc.). Dropping everything after the first comma risks making a
+    # specific recipe look like a generic food, so preserve the full source wording.
+    canonical = (without_local or raw)[:160]
+
+    candidates = [raw]
     if local_match:
         candidates.append(local_match.group(1).strip())
-    first_clause = raw.split(",", 1)[0].strip()
-    if first_clause:
-        candidates.append(first_clause)
 
     aliases: list[str] = []
     seen = {normalize_name(canonical)}
