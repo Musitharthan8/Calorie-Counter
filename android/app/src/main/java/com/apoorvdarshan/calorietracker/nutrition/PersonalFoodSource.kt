@@ -29,11 +29,17 @@ class PersonalFoodSource(private val loadSavedFoods: suspend () -> List<FoodEntr
         ) return null
         val quantity = entry.selectedServingQuantity?.takeIf { it.isFinite() && it > 0 }
         val unit = entry.selectedServingUnit?.takeIf { it.isNotBlank() }
+        val originalSource = entry.nutritionProvenance.singleOrNull()
         return NutritionCandidate(
             canonicalName = entry.name,
             source = NutritionSourceKind.PERSONAL,
-            sourceName = "Personal saved food",
+            sourceName = originalSource?.let { "Personal saved food · ${it.sourceName}" }
+                ?: "Personal saved food",
             sourceFoodId = entry.id.toString(),
+            sourceUrl = originalSource?.sourceUrl,
+            datasetVersion = originalSource?.datasetVersion,
+            license = originalSource?.license,
+            attribution = originalSource?.attribution,
             evidence = NutritionEvidence.SAVED_FOOD,
             nutrition = NutrientValues(
                 entry.calories.toDouble(),
