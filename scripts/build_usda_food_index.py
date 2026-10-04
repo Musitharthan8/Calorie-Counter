@@ -205,8 +205,11 @@ def read_nutrients(
                 continue
             if fdc_id not in foods or amount < 0:
                 continue
-            nutrient_nbr = id_to_nbr.get(raw_id, raw_id)
-            mapped = NUTRIENTS.get(nutrient_nbr)
+            # Modern FDC dumps use nutrient_id values such as 1008 (energy),
+            # while nutrient.csv also carries legacy nutrient_nbr values such as 208.
+            # Prefer the modern id when we know it; only fall back to nutrient_nbr.
+            lookup_id = raw_id if raw_id in NUTRIENTS else id_to_nbr.get(raw_id, raw_id)
+            mapped = NUTRIENTS.get(lookup_id)
             if mapped is None:
                 continue
             key, unit = mapped
