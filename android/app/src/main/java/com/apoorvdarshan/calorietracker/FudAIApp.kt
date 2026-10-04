@@ -246,10 +246,20 @@ class AppContainer(app: FudAIApp) {
             add(
                 com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
                     val favorites = foodRepository.migratedFavorites()
-                    val learned = foodRepository.frequent()
+                    val favoriteNames = favorites
+                        .map { it.name.trim().lowercase(java.util.Locale.ROOT) }
+                        .toSet()
+                    val learnedGroups = foodRepository.frequent()
                         .filter { it.count >= 3 }
-                        .sortedByDescending { it.template.timestamp }
-                        .map { it.template }
+                        .filter {
+                            it.template.name.trim().lowercase(java.util.Locale.ROOT) !in favoriteNames
+                        }
+                        .groupBy { it.template.name.trim().lowercase(java.util.Locale.ROOT) }
+                    val learned = learnedGroups.values
+                        // Multiple repeated calorie/macro variants with the same name are not a
+                        // stable habit. Require the user to Favourite the intended one instead.
+                        .filter { variants -> variants.size == 1 }
+                        .map { variants -> variants.single().template }
                     favorites + learned
                 }
             )
