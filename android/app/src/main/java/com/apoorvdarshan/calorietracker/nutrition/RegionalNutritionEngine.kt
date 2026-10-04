@@ -116,6 +116,9 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
             if (matches.any { it.provenance.estimated }) {
                 add("Includes estimated nutrition values; check source details.")
             }
+            if (matches.any { it.provenance.userEdited }) {
+                add("Nutrition values were edited after source lookup.")
+            }
             if (matches.any { it.provenance.portionEstimated }) {
                 add("One or more portion sizes are estimated or derived.")
             }

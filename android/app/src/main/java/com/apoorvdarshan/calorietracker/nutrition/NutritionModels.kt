@@ -75,7 +75,8 @@ data class NutritionCandidate(
     /** True when the nutrient values themselves are estimates rather than source-authored values. */
     val estimated: Boolean = false,
     /** True when the candidate's reference household portion mass is derived/estimated. */
-    val referencePortionEstimated: Boolean = false
+    val referencePortionEstimated: Boolean = false,
+    val userEdited: Boolean = false
 ) {
     init {
         require(canonicalName.isNotBlank() && sourceName.isNotBlank())

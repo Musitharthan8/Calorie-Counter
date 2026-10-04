@@ -164,6 +164,7 @@ internal class SqliteOfflineFoodIndex(
 
     private fun materializeDatabase(): File {
         val loadedManifest = manifest
+        requireNotNull(loadedManifest.sha256) { "Bundled nutrition database requires a checksum" }
         val directory = File(appContext.noBackupFilesDir, "nutrition-indexes").apply { mkdirs() }
         val safeSource = loadedManifest.source.name.lowercase()
         val safeVersion = loadedManifest.datasetVersion

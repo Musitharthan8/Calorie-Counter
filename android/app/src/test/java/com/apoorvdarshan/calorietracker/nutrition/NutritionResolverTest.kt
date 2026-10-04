@@ -63,4 +63,23 @@ class NutritionResolverTest {
             fail("Cancellation must propagate")
         } catch (_: CancellationException) { }
     }
+    @Test fun estimatedPortionsAndEditsRemainVisibleAndLowConfidenceIsNotUpgraded() = runBlocking {
+        val c = candidate().copy(referencePortionEstimated = true, userEdited = true)
+        val resolver = NutritionResolver(listOf(InMemoryNutritionSource(listOf(c))))
+        val high = meal().foods.single().copy(confidence = InterpretationConfidence.HIGH)
+        val provenance = resolver.resolve(meal(high)).matches.single().provenance
+        assertTrue(provenance.portionEstimated)
+        assertTrue(provenance.userEdited)
+        assertFalse(provenance.estimated)
+        assertEquals(InterpretationConfidence.MEDIUM, provenance.confidence)
+        val low = resolver.resolve(meal(high.copy(confidence = InterpretationConfidence.LOW)))
+        assertEquals(InterpretationConfidence.LOW, low.matches.single().provenance.confidence)
+    }
+
+    @Test fun overflowingScaledNutritionIsRejected() = runBlocking {
+        val resolver = NutritionResolver(listOf(InMemoryNutritionSource(listOf(candidate()))))
+        val huge = meal().foods.single().copy(quantity = FoodQuantity(Double.MAX_VALUE, "cup"))
+        assertFalse(resolver.resolve(meal(huge)).complete)
+    }
+
 }

@@ -31,6 +31,10 @@ class PersonalFoodSourceTest {
         val candidates = source.search(mention)
         assertEquals(1, candidates.size)
         assertEquals("kopi C kosong", candidates.single().canonicalName)
+        val resolved = NutritionResolver(listOf(source)).resolve(
+            MealInterpretation(mention.originalWording, listOf(mention)))
+        assertTrue(resolved.complete)
+        assertEquals(60.0, resolved.matches.single().nutrition.calories, 0.0)
     }
 
     @Test fun explicitPreferenceOrderWinsWhenHistoryContainsSameNamedVariants() = runBlocking {

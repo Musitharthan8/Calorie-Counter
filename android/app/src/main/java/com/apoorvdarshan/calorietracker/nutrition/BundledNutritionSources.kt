@@ -47,7 +47,7 @@ internal object BundledNutritionSources {
                 index.close()
                 continue
             }
-            if (manifest.source != dataset.expectedSource) {
+            if (manifest.source != dataset.expectedSource || manifest.sha256 == null) {
                 index.close()
                 continue
             }

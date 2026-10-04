@@ -56,13 +56,23 @@ class NutritionResolver(private val sources: List<NutritionSource>) {
             else -> return null // No assumed cup size, food density, bucket size or piece weight.
         }
         if (!factor.isFinite() || factor <= 0) return null
-        val confidence = if (candidate.estimated || !quantity.explicit || mention.confidence != InterpretationConfidence.HIGH)
-            InterpretationConfidence.MEDIUM else InterpretationConfidence.HIGH
+        val scaled = listOf(candidate.nutrition.calories, candidate.nutrition.protein,
+            candidate.nutrition.carbs, candidate.nutrition.fat).map { it * factor }
+        if (scaled.any { !it.isFinite() } || scaled.first() > Int.MAX_VALUE) return null
+        if (candidate.nutrition.micronutrients.values.any { !(it.amount * factor).isFinite() }) return null
+        val grams = candidate.referenceGrams?.times(factor)
+        if (grams != null && (!grams.isFinite() || grams <= 0)) return null
+        val confidence = when {
+            mention.confidence == InterpretationConfidence.LOW -> InterpretationConfidence.LOW
+            candidate.estimated || candidate.userEdited || candidate.referencePortionEstimated ||
+                !quantity.explicit || mention.confidence != InterpretationConfidence.HIGH -> InterpretationConfidence.MEDIUM
+            else -> InterpretationConfidence.HIGH
+        }
         val score = (if (exact) 1.0 else 0.9) * candidate.reliability +
             (if (mention.region != null && mention.region.equals(candidate.region, true)) 0.05 else 0.0) +
             (if (unit == referenceUnit) 0.05 else 0.0)
         return NutritionMatch(mention, candidate, candidate.nutrition.scaled(factor),
-            candidate.referenceGrams?.times(factor), score,
+            grams, score,
             NutritionProvenance(
                 source = candidate.source,
                 sourceName = candidate.sourceName,
@@ -76,7 +86,8 @@ class NutritionResolver(private val sources: List<NutritionSource>) {
                 datasetVersion = candidate.datasetVersion,
                 license = candidate.license,
                 attribution = candidate.attribution,
-                portionEstimated = !quantity.explicit || candidate.referencePortionEstimated
+                portionEstimated = !quantity.explicit || candidate.referencePortionEstimated,
+                userEdited = candidate.userEdited
             ))
     }
 }

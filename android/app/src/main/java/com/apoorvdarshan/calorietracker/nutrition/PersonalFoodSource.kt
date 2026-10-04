@@ -17,7 +17,9 @@ class PersonalFoodSource(private val loadSavedFoods: suspend () -> List<FoodEntr
             .asSequence()
             .filter { entry -> normaliseFoodName(entry.name) in lookupNames }
             .filter { entry -> seenNames.add(normaliseFoodName(entry.name)) }
-            .mapNotNull(::candidate)
+            .mapNotNull { entry ->
+                candidate(entry)?.copy(aliases = setOf(mention.name))
+            }
             .toList()
     }
 
@@ -61,7 +63,9 @@ class PersonalFoodSource(private val loadSavedFoods: suspend () -> List<FoodEntr
             },
             referenceGrams = entry.servingSizeGrams?.takeIf { it.isFinite() && it > 0 },
             estimated = entry.nutritionProvenance.isEmpty() ||
-                entry.nutritionProvenance.any { it.estimated }
+                entry.nutritionProvenance.any { it.estimated },
+            referencePortionEstimated = entry.nutritionProvenance.any { it.portionEstimated },
+            userEdited = entry.nutritionProvenance.any { it.userEdited }
         )
     }
 
