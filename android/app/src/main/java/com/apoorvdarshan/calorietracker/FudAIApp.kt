@@ -240,7 +240,12 @@ class AppContainer(app: FudAIApp) {
     val localGemma = LocalGemmaRuntime(app, localModels)
     val localWhisper = LocalWhisperRuntime(app, localModels)
 
-    val foodAnalysis = FoodAnalysisService(prefs, keyStore, localGemma = localGemma)
+    val foodAnalysis = FoodAnalysisService(
+        prefs, keyStore, localGemma = localGemma,
+        nutritionSources = listOf(com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
+            foodRepository.migratedFavorites()
+        })
+    )
     val chatService = ChatService(prefs, keyStore, localGemma = localGemma)
     val speechService = SpeechService(prefs, keyStore, localWhisper = localWhisper)
 

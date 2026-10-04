@@ -374,7 +374,10 @@ fun FoodResultSheet(
         },
         servingSizeIsKnown = servingSizeIsKnown,
         ingredients = editableIngredients,
-        productMetadata = analysis.productMetadata
+        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
     )
     fun previewEntry() = FoodEntry(
         name = name.trim().ifEmpty { analysis.name },
@@ -424,7 +427,10 @@ fun FoodResultSheet(
             selectedServingQuantity
         },
         ingredients = scaledIngredients(),
-        productMetadata = analysis.productMetadata
+        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
     )
     var whatIfEntry by rememberSaveable(stateSaver = foodDraftSaver<FoodEntry?>()) { mutableStateOf<FoodEntry?>(null) }
 
@@ -466,6 +472,19 @@ fun FoodResultSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            if (analysis.nutritionProvenance.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            analysis.nutritionProvenance.map { it.sourceName }.distinct().joinToString(" • "),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        analysis.nutritionWarnings.forEach { warning ->
+                            Text(warning, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
             // Swipeable original-photo gallery OR 80sp emoji fallback.
             item {
                 Box(
@@ -552,7 +571,10 @@ fun FoodResultSheet(
                         fat = analysis.fat,
                         source = source,
                         ingredients = analysis.ingredients,
-                        productMetadata = analysis.productMetadata
+                        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
                     )
                     FoodProductMetadataCard(
                         metadata,
@@ -573,7 +595,10 @@ fun FoodResultSheet(
                         fat = analysis.fat,
                         source = source,
                         ingredients = analysis.ingredients,
-                        productMetadata = analysis.productMetadata
+                        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
                     )
                     SheetPillCard {
                         Text(

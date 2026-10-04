@@ -58,7 +58,10 @@ data class FoodEntry(
     /** Origin of a Health Connect import; never export these entries back to Health Connect. */
     val healthConnectOrigin: String? = null,
     val healthConnectRecordId: String? = null,
-    val productMetadata: FoodProductMetadata? = null
+    val productMetadata: FoodProductMetadata? = null,
+    val mealInterpretation: com.apoorvdarshan.calorietracker.nutrition.MealInterpretation? = null,
+    val nutritionProvenance: List<com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance> = emptyList(),
+    val nutritionWarnings: List<String> = emptyList()
 ) {
     /** Unique key for favorite deduplication (name + calorie combo). */
     val favoriteKey: String get() = "${name.lowercase()}|$calories"
@@ -134,7 +137,10 @@ data class FoodEntry(
         customNote = customNote,
         progressiveMeal = progressiveMeal,
         ingredients = ingredients,
-        productMetadata = productMetadata
+        productMetadata = productMetadata,
+        mealInterpretation = mealInterpretation,
+        nutritionProvenance = nutritionProvenance,
+        nutritionWarnings = nutritionWarnings
     )
 
     val allImageFilenames: List<String>

@@ -74,7 +74,8 @@ class FoodAnalysisService(
     private val prefs: PreferencesStore,
     private val keyStore: KeyStore,
     private val okHttp: OkHttpClient = defaultClient,
-    private val localGemma: LocalGemmaRuntime? = null
+    private val localGemma: LocalGemmaRuntime? = null,
+    private val nutritionSources: List<com.apoorvdarshan.calorietracker.nutrition.NutritionSource> = emptyList()
 ) {
 
     suspend fun analyzeWorkout(
@@ -358,10 +359,18 @@ class FoodAnalysisService(
         return callAi(prompt, imageBytesList = emptyList(), jsonResponse = false).trim()
     }
 
-    suspend fun analyzeText(description: String): FoodAnalysis {
+    suspend fun analyzeText(description: String): FoodAnalysis =
+        com.apoorvdarshan.calorietracker.nutrition.RegionalNutritionEngine(
+            interpreter = com.apoorvdarshan.calorietracker.nutrition.AiMealInterpreter { prompt -> callAi(prompt, emptyList()) },
+            resolver = com.apoorvdarshan.calorietracker.nutrition.NutritionResolver(nutritionSources),
+            estimate = ::estimateText
+        ).analyze(description)
+
+    /** Explicit fallback only: these values have not been fetched from a nutrition database. */
+    private suspend fun estimateText(description: String): FoodAnalysis {
         val prompt = """
             Estimate the nutritional content for: $description
-            Parse any quantities, brands, and multiple items from the text. If a brand is mentioned, use that brand's known nutritional data. If multiple items are described, sum up the total nutrition.
+            Parse any quantities, brands, and multiple items from the text. If a brand is mentioned, retain it, but do not claim to have looked up official data. If multiple items are described, sum up the total nutrition.
             Respond ONLY with JSON:
             {"name":"...","calories":0,"protein":0.0,"carbs":0.0,"fat":0.0,"serving_size_grams":0.0,"emoji":"<single specific food emoji>","sugar":0.0,"added_sugar":0.0,"fiber":0.0,"saturated_fat":0.0,"monounsaturated_fat":0.0,"polyunsaturated_fat":0.0,"cholesterol":0.0,"caffeine":0.0,"creatine":0.0,"beta_alanine":0.0,"l_citrulline":0.0,"l_carnitine":0.0,"l_arginine":0.0,"taurine":0.0,"betaine":0.0,"hmb":0.0,"sodium":0.0,"potassium":0.0,"trans_fat":0.0,"calcium":0.0,"iron":0.0,"magnesium":0.0,"zinc":0.0,"vitamin_a":0.0,"vitamin_c":0.0,"vitamin_d":0.0,"vitamin_b12":0.0,"vitamin_e":0.0,"vitamin_k":0.0,"folate":0.0,"omega_3":0.0,"ingredients":[],"unit_options":[]}
             Calories are integers. Protein/carbs/fat are decimal gram values when needed. serving_size_grams is the estimated total weight in grams. Nutrients are numbers: sugar/fiber/sat fat/mono fat/poly fat/trans fat/omega-3 in grams; cholesterol/caffeine/sodium/potassium/calcium/iron/magnesium/zinc/vitamin C/vitamin E in milligrams; vitamin A/vitamin D/vitamin B12/vitamin K/folate in micrograms.

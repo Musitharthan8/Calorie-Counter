@@ -1,0 +1,80 @@
+package com.apoorvdarshan.calorietracker.nutrition
+
+import com.apoorvdarshan.calorietracker.models.MealIngredient
+import com.apoorvdarshan.calorietracker.services.ai.FoodAnalysis
+import kotlinx.coroutines.CancellationException
+import kotlin.math.roundToInt
+
+/** Migration boundary: keep FoodAnalysis/review/diary intact and never return an incomplete total. */
+class RegionalNutritionEngine(
+    private val interpreter: MealInterpreter,
+    private val resolver: NutritionResolver,
+    private val estimate: suspend (String) -> FoodAnalysis
+) {
+    suspend fun analyze(rawText: String): FoodAnalysis {
+        require(rawText.isNotBlank() && rawText.length <= 16000)
+        val interpretation = try {
+            interpreter.interpret(rawText).validated()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Old/simple logging survives providers that cannot follow the new schema.
+            // Still guard material quantity ambiguity before allowing a legacy estimate.
+            val local = runCatching { LocalMealInterpreter().parse(rawText) }.getOrNull()
+            if (local?.ambiguities?.any { it.affectsNutrition } == true) throw MealClarificationRequired(local)
+            return fallback(rawText, local, "Structured interpretation unavailable. Nutrition is an AI estimate.")
+        }
+        if (interpretation.ambiguities.any { it.affectsNutrition }) throw MealClarificationRequired(interpretation)
+        val resolution = resolver.resolve(interpretation)
+        if (!resolution.complete) {
+            return fallback(rawText, interpretation,
+                "AI estimate: no complete verified food and portion match. Recipes and portions may vary.")
+        }
+        return resolution.toFoodAnalysis()
+    }
+
+    private suspend fun fallback(rawText: String, meal: MealInterpretation?, warning: String): FoodAnalysis {
+        val analysis = estimate(rawText)
+        fun provenance(name: String) = NutritionProvenance(NutritionSourceKind.AI_ESTIMATE, "AI estimate",
+            evidence = NutritionEvidence.AI_ESTIMATE, estimated = true,
+            confidence = InterpretationConfidence.LOW, originalWording = rawText, canonicalName = name)
+        return analysis.copy(
+            mealInterpretation = meal,
+            nutritionProvenance = listOf(provenance(analysis.name)),
+            nutritionWarnings = listOf(warning),
+            ingredients = analysis.ingredients.map { it.copy(nutritionProvenance = provenance(it.name)) }
+        )
+    }
+}
+
+internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
+    require(complete) { "Cannot log partial nutrition as a meal total" }
+    val allGramsKnown = matches.all { it.grams != null }
+    // Existing ingredient editing requires real mass; retain per-food provenance even without it.
+    val ingredients = if (allGramsKnown) matches.map { match ->
+        MealIngredient(match.candidate.canonicalName, match.grams!!, match.nutrition.calories.roundToInt(),
+            match.nutrition.protein, match.nutrition.carbs, match.nutrition.fat,
+            nutritionProvenance = match.provenance)
+    } else emptyList()
+    fun nutrient(key: String, unit: String): Double? {
+        val values = matches.map { it.nutrition.micronutrients[key] }
+        return if (values.all { it != null && it.unit == unit }) values.sumOf { it!!.amount } else null
+    }
+    return FoodAnalysis(
+        name = matches.joinToString(", ") { it.candidate.canonicalName },
+        calories = if (ingredients.isNotEmpty()) ingredients.sumOf { it.calories }
+            else matches.sumOf { it.nutrition.calories }.roundToInt(),
+        protein = matches.sumOf { it.nutrition.protein },
+        carbs = matches.sumOf { it.nutrition.carbs },
+        fat = matches.sumOf { it.nutrition.fat },
+        servingSizeGrams = if (allGramsKnown) matches.sumOf { it.grams!! } else 1.0,
+        servingSizeIsKnown = allGramsKnown,
+        sugar = nutrient("sugar", "g"), fiber = nutrient("fiber", "g"), sodium = nutrient("sodium", "mg"),
+        calcium = nutrient("calcium", "mg"), iron = nutrient("iron", "mg"), potassium = nutrient("potassium", "mg"),
+        vitaminC = nutrient("vitaminC", "mg"), vitaminD = nutrient("vitaminD", "ug"),
+        ingredients = ingredients,
+        mealInterpretation = interpretation,
+        nutritionProvenance = matches.map { it.provenance },
+        nutritionWarnings = if (matches.any { it.provenance.estimated }) listOf("Includes saved estimates; check portion sizes.") else emptyList()
+    )
+}

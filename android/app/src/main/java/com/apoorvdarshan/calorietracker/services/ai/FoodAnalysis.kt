@@ -61,7 +61,10 @@ data class FoodAnalysis(
     val customNote: String? = null,
     val progressiveMeal: Boolean = false,
     val ingredients: List<MealIngredient> = emptyList(),
-    val productMetadata: FoodProductMetadata? = null
+    val productMetadata: FoodProductMetadata? = null,
+    val mealInterpretation: com.apoorvdarshan.calorietracker.nutrition.MealInterpretation? = null,
+    val nutritionProvenance: List<com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance> = emptyList(),
+    val nutritionWarnings: List<String> = emptyList()
 ) {
     /** When the model also returned a breakdown, the header macros are the sum of that list. */
     fun withIngredientMacroTotals(): FoodAnalysis {
