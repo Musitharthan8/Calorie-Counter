@@ -46,13 +46,33 @@ class PersonalFoodSource(private val loadSavedFoods: suspend () -> List<FoodEntr
                             ?.let { put(key, NutrientAmount(it, unitName)) }
                     }
                     add("sugar", entry.sugar, "g")
+                    add("addedSugar", entry.addedSugar, "g")
                     add("fiber", entry.fiber, "g")
+                    add("saturatedFat", entry.saturatedFat, "g")
+                    add("monounsaturatedFat", entry.monounsaturatedFat, "g")
+                    add("polyunsaturatedFat", entry.polyunsaturatedFat, "g")
+                    add("cholesterol", entry.cholesterol, "mg")
+                    add("caffeine", entry.caffeine, "mg")
                     add("sodium", entry.sodium, "mg")
+                    add("potassium", entry.potassium, "mg")
+                    add("transFat", entry.transFat, "g")
                     add("calcium", entry.calcium, "mg")
                     add("iron", entry.iron, "mg")
-                    add("potassium", entry.potassium, "mg")
+                    add("magnesium", entry.magnesium, "mg")
+                    add("zinc", entry.zinc, "mg")
+                    add("vitaminA", entry.vitaminA, "ug")
                     add("vitaminC", entry.vitaminC, "mg")
                     add("vitaminD", entry.vitaminD, "ug")
+                    add("vitaminB12", entry.vitaminB12, "ug")
+                    add("vitaminE", entry.vitaminE, "mg")
+                    add("vitaminK", entry.vitaminK, "ug")
+                    add("folate", entry.folate, "ug")
+                    add("omega3", entry.omega3, "g")
+                    entry.sourceNutrients.forEach { (key, nutrient) ->
+                        if (nutrient.amount.isFinite() && nutrient.amount >= 0) {
+                            put(key, nutrient)
+                        }
+                    }
                 }
             ),
             // No known unit means one copy of the saved food, not an invented 100 g portion.
