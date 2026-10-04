@@ -24,20 +24,57 @@ class RegionalNutritionEngine(
             if (local?.ambiguities?.any { it.affectsNutrition } == true) throw MealClarificationRequired(local)
             return fallback(rawText, local, "Structured interpretation unavailable. Nutrition is an AI estimate.")
         }
-        if (interpretation.ambiguities.any { it.affectsNutrition }) throw MealClarificationRequired(interpretation)
-        val resolution = resolver.resolve(interpretation)
+        return analyzeInterpretation(
+            interpretation = interpretation,
+            fallbackLabel = rawText,
+            fallbackEstimate = { estimate(rawText) }
+        )
+    }
+
+    /**
+     * Shared resolution boundary for non-text inputs such as grounded photo interpretation.
+     *
+     * The caller owns perception and the legacy fallback action; this method owns the invariant
+     * that material ambiguity is clarified first and partial database matches never become a meal total.
+     */
+    internal suspend fun analyzeInterpretation(
+        interpretation: MealInterpretation,
+        fallbackLabel: String,
+        fallbackEstimate: suspend () -> FoodAnalysis
+    ): FoodAnalysis {
+        val validated = interpretation.validated()
+        require(fallbackLabel.isNotBlank() && fallbackLabel.length <= 16000)
+        if (validated.ambiguities.any { it.affectsNutrition }) {
+            throw MealClarificationRequired(validated)
+        }
+        val resolution = resolver.resolve(validated)
         if (!resolution.complete) {
-            return fallback(rawText, interpretation,
-                "AI estimate: no complete verified food and portion match. Recipes and portions may vary.")
+            return fallback(
+                rawInput = fallbackLabel,
+                meal = validated,
+                warning = "AI estimate: no complete verified food and portion match. Recipes and portions may vary.",
+                estimateAction = fallbackEstimate
+            )
         }
         return resolution.toFoodAnalysis()
     }
 
-    private suspend fun fallback(rawText: String, meal: MealInterpretation?, warning: String): FoodAnalysis {
-        val analysis = estimate(rawText)
-        fun provenance(name: String) = NutritionProvenance(NutritionSourceKind.AI_ESTIMATE, "AI estimate",
-            evidence = NutritionEvidence.AI_ESTIMATE, estimated = true,
-            confidence = InterpretationConfidence.LOW, originalWording = rawText, canonicalName = name)
+    private suspend fun fallback(
+        rawInput: String,
+        meal: MealInterpretation?,
+        warning: String,
+        estimateAction: suspend () -> FoodAnalysis = { estimate(rawInput) }
+    ): FoodAnalysis {
+        val analysis = estimateAction()
+        fun provenance(name: String) = NutritionProvenance(
+            source = NutritionSourceKind.AI_ESTIMATE,
+            sourceName = "AI estimate",
+            evidence = NutritionEvidence.AI_ESTIMATE,
+            estimated = true,
+            confidence = InterpretationConfidence.LOW,
+            originalWording = rawInput,
+            canonicalName = name
+        )
         return analysis.copy(
             mealInterpretation = meal,
             nutritionProvenance = listOf(provenance(analysis.name)),
