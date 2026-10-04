@@ -63,8 +63,19 @@ class NutritionResolver(private val sources: List<NutritionSource>) {
             (if (unit == referenceUnit) 0.05 else 0.0)
         return NutritionMatch(mention, candidate, candidate.nutrition.scaled(factor),
             candidate.referenceGrams?.times(factor), score,
-            NutritionProvenance(candidate.source, candidate.sourceName, candidate.sourceFoodId,
-                candidate.evidence, candidate.estimated || candidate.source == NutritionSourceKind.AI_ESTIMATE,
-                confidence, mention.originalWording, candidate.canonicalName, candidate.sourceUrl))
+            NutritionProvenance(
+                source = candidate.source,
+                sourceName = candidate.sourceName,
+                foodId = candidate.sourceFoodId,
+                evidence = candidate.evidence,
+                estimated = candidate.estimated || candidate.source == NutritionSourceKind.AI_ESTIMATE,
+                confidence = confidence,
+                originalWording = mention.originalWording,
+                canonicalName = candidate.canonicalName,
+                sourceUrl = candidate.sourceUrl,
+                datasetVersion = candidate.datasetVersion,
+                license = candidate.license,
+                attribution = candidate.attribution
+            ))
     }
 }
