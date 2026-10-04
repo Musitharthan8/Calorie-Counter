@@ -193,6 +193,39 @@ class UsdaImporterTest(unittest.TestCase):
                 )]
                 self.assertIn("Banana", aliases)
 
+    def test_nonfinite_macro_rows_are_rejected(self) -> None:
+        for invalid in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as temp:
+                root = make_fdc_dir(Path(temp) / "source", fdc_id=1, description="Synthetic food")
+                path = root / "food_nutrient.csv"
+                path.write_text(path.read_text().replace("130.0", invalid))
+                output = Path(temp) / "out.sqlite"
+                self.assertEqual(0, usda.build_from_csv_roots([root], output, "test"))
+
+    def test_legacy_nutrient_numbers_are_a_separate_fallback_namespace(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = make_fdc_dir(Path(temp), fdc_id=1, description="Synthetic food")
+            path = root / "food_nutrient.csv"
+            text = path.read_text()
+            for modern, legacy in ((1008, 208), (1003, 203), (1005, 205), (1004, 204), (1093, 307)):
+                text = text.replace(str(modern), str(legacy))
+            path.write_text(text)
+            values = usda.read_nutrients(root, usda.read_foods(root))[1]
+            self.assertEqual((130.0, "kcal"), values["calories"])
+            self.assertEqual((5.0, "mg"), values["sodium"])
+
+    def test_multiple_portions_do_not_invent_a_default_from_sequence_order(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = make_fdc_dir(Path(temp), fdc_id=1, description="Synthetic food")
+            write_csv(root / "food_portion.csv",
+                ["fdc_id", "amount", "gram_weight", "seq_num", "portion_description"],
+                [{"fdc_id": 1, "amount": 1, "gram_weight": grams, "seq_num": seq,
+                  "portion_description": label}
+                 for grams, seq, label in ((100, 1, "1 cup"), (150, 2, "1 cup"), (float("inf"), 3, "1 piece"))])
+            portions = usda.read_portions(root, usda.read_foods(root))[1]
+            self.assertEqual(2, len(portions))
+            self.assertFalse(any(p["is_default"] for p in portions))
+
     def test_unknown_portion_wording_does_not_become_a_fake_known_unit(self) -> None:
         self.assertIsNone(usda.portion_unit("1 unspecified scoop"))
         self.assertEqual("cup", usda.portion_unit("1 cup, cooked"))

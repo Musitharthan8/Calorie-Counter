@@ -156,8 +156,9 @@ def derived_serving_grams(row: tuple, columns: dict[str, int]) -> float | None:
         if base is None or serving is None or base <= 0 or serving <= 0:
             continue
         grams = serving / base * 100.0
-        if 5.0 <= grams <= 2500.0:
-            estimates.append(grams)
+        if not 5.0 <= grams <= 2500.0:
+            return None  # A contradictory ratio must not disappear from the agreement check.
+        estimates.append(grams)
 
     if len(estimates) < 2:
         return None
@@ -284,6 +285,15 @@ def build(
         workbook.close()
         raise SystemExit("INDB workbook is missing columns: " + ", ".join(missing))
 
+    data_rows = list(rows)
+    codes = [str(row[columns["food_code"]] or "").strip() for row in data_rows]
+    seen = set()
+    for code in codes:
+        if code and code in seen:
+            workbook.close()
+            raise ValueError(f"Duplicate INDB food_code: {code}")
+        seen.add(code)
+
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()
@@ -293,7 +303,7 @@ def build(
     seen_codes: set[str] = set()
     record_count = 0
     try:
-        for row in rows:
+        for row in data_rows:
             code = str(row[columns["food_code"]] or "").strip()
             raw_name = str(row[columns["food_name"]] or "").strip()
             if not code or not raw_name or code in seen_codes:
@@ -311,8 +321,8 @@ def build(
 
             d2 = value(row[columns["vitd2_ug"]]) if "vitd2_ug" in columns else None
             d3 = value(row[columns["vitd3_ug"]]) if "vitd3_ug" in columns else None
-            if d2 is not None or d3 is not None:
-                parsed["vitaminD"] = ((d2 or 0.0) + (d3 or 0.0), "ug")
+            if d2 is not None and d3 is not None and d2 >= 0 and d3 >= 0:
+                parsed["vitaminD"] = (d2 + d3, "ug")
 
             if any(key not in parsed for key in MACRO_KEYS):
                 continue

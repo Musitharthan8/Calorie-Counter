@@ -33,6 +33,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import re
 import shutil
 import sqlite3
@@ -93,6 +94,13 @@ NUTRIENTS = {
 }
 
 MACRO_KEYS = ("calories", "protein", "carbs", "fat")
+# Legacy USDA nutrient numbers are a different namespace from modern FDC IDs.
+LEGACY_NUTRIENTS = {old: NUTRIENTS[new] for old, new in {
+    208: 1008, 203: 1003, 205: 1005, 204: 1004, 291: 1079, 269: 2000,
+    606: 1258, 645: 1292, 646: 1293, 601: 1253, 307: 1093, 306: 1092,
+    605: 1257, 301: 1087, 303: 1089, 304: 1090, 309: 1095, 320: 1106,
+    401: 1162, 328: 1114, 418: 1178, 323: 1109, 430: 1185, 435: 1177,
+}.items()}
 
 # Explicit household units that the runtime can safely compare with interpreted user units.
 UNIT_PATTERNS = [
@@ -203,13 +211,14 @@ def read_nutrients(
                 amount = float(row["amount"])
             except (KeyError, TypeError, ValueError):
                 continue
-            if fdc_id not in foods or amount < 0:
+            if fdc_id not in foods or not math.isfinite(amount) or amount < 0:
                 continue
             # Modern FDC dumps use nutrient_id values such as 1008 (energy),
             # while nutrient.csv also carries legacy nutrient_nbr values such as 208.
             # Prefer the modern id when we know it; only fall back to nutrient_nbr.
-            lookup_id = raw_id if raw_id in NUTRIENTS else id_to_nbr.get(raw_id, raw_id)
-            mapped = NUTRIENTS.get(lookup_id)
+            mapped = NUTRIENTS.get(raw_id)
+            if mapped is None:
+                mapped = LEGACY_NUTRIENTS.get(id_to_nbr.get(raw_id, raw_id))
             if mapped is None:
                 continue
             key, unit = mapped
@@ -242,7 +251,7 @@ def read_portions(
                 seq = int(float(row.get("seq_num") or 999999))
             except (KeyError, TypeError, ValueError):
                 continue
-            if fdc_id not in foods or grams <= 0 or amount <= 0:
+            if fdc_id not in foods or not math.isfinite(grams) or not math.isfinite(amount) or grams <= 0 or amount <= 0:
                 continue
             description = (row.get("portion_description") or row.get("modifier") or "").strip()
             unit = portion_unit(description, row.get("modifier") or "")
@@ -264,10 +273,12 @@ def read_portions(
 
     for fdc_id, portions in result.items():
         portions.sort(key=lambda p: (int(p["seq"]), str(p["unit"])))
-        # Keep a small deterministic set and mark exactly one source default.
-        del portions[8:]
-        for i, portion in enumerate(portions):
-            portion["is_default"] = i == 0
+        # seq_num is ordering, not evidence of a default serving. Keep all alternatives so
+        # truncation cannot erase ambiguity. Only one distinct portion permits a default.
+        unique = {(p["unit"], p["amount"], p["grams"]): p for p in portions}
+        portions[:] = unique.values()
+        for portion in portions:
+            portion["is_default"] = len(portions) == 1
     return result
 
 
@@ -330,7 +341,7 @@ def write_food(
     if any(key not in nutrients for key in MACRO_KEYS):
         return False
     macros = {key: nutrients[key][0] for key in MACRO_KEYS}
-    if any(value < 0 for value in macros.values()):
+    if any(not math.isfinite(value) or value < 0 for value in macros.values()):
         return False
 
     description = (meta.get("description") or "").strip()
@@ -338,7 +349,7 @@ def write_food(
     micros = {
         key: {"amount": amount, "unit": unit}
         for key, (amount, unit) in nutrients.items()
-        if key not in MACRO_KEYS
+        if key not in MACRO_KEYS and math.isfinite(amount) and amount >= 0
     }
     aliases = aliases_for_description(description)
     search_text = " ".join([description, *aliases])

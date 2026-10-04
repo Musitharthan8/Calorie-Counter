@@ -210,6 +210,38 @@ class IndbImporterTest(unittest.TestCase):
             with sqlite3.connect(output) as conn:
                 self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0])
 
+    def test_out_of_range_ratio_cannot_be_ignored(self) -> None:
+        columns = {name: index for index, name in enumerate(HEADERS)}
+        for impossible_grams in (1.0, 3000.0):
+            values = row(code="A", name="Synthetic dal", serving_grams=180.0)
+            values[columns["unit_serving_fat_g"]] = 2.0 * impossible_grams / 100.0
+            self.assertIsNone(indb.derived_serving_grams(tuple(values), columns))
+
+    def test_duplicate_codes_fail_before_replacing_existing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            workbook = root / "input.xlsx"
+            write_workbook(workbook, [row(code="A", name="First"), row(code="A", name="Second")])
+            output = root / "index.sqlite"
+            output.write_bytes(b"existing output")
+            with self.assertRaisesRegex(ValueError, "Duplicate INDB food_code"):
+                indb.build(workbook, output, "test", "TEST LICENCE", "Test")
+            self.assertEqual(b"existing output", output.read_bytes())
+
+    def test_missing_or_negative_vitamin_d_component_is_not_totalled(self) -> None:
+        for missing in (None, -1.0):
+            with self.subTest(value=missing), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                values = row(code="A", name="Synthetic food")
+                values[HEADERS.index("vitd2_ug")] = missing
+                write_workbook(root / "input.xlsx", [values])
+                indb.build(root / "input.xlsx", root / "index.sqlite", "test", "TEST LICENCE", "Test")
+                with sqlite3.connect(root / "index.sqlite") as conn:
+                    micros = json.loads(conn.execute("SELECT micronutrients_json FROM foods").fetchone()[0])
+                self.assertNotIn("vitaminD", micros)
+                self.assertIn("freeSugar", micros)
+                self.assertNotIn("sugar", micros)
+
     def test_common_serving_units_are_normalized_without_inventing_weights(self) -> None:
         self.assertEqual("tbsp", indb.normalize_serving_unit("tablespoons"))
         self.assertEqual("piece", indb.normalize_serving_unit("pieces"))
