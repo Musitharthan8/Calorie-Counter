@@ -56,7 +56,16 @@ class RegionalNutritionEngine(
                 estimateAction = fallbackEstimate
             )
         }
-        return resolution.toFoodAnalysis()
+        return try {
+            resolution.toFoodAnalysis()
+        } catch (_: IllegalArgumentException) {
+            fallback(
+                rawInput = fallbackLabel,
+                meal = validated,
+                warning = "AI estimate: verified nutrition values could not be combined safely.",
+                estimateAction = fallbackEstimate
+            )
+        }
     }
 
     private suspend fun fallback(
@@ -86,7 +95,31 @@ class RegionalNutritionEngine(
 
 internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
     require(complete) { "Cannot log partial nutrition as a meal total" }
+
+    fun safeSum(values: Iterable<Double>, label: String): Double {
+        var total = 0.0
+        values.forEach { value ->
+            require(value.isFinite() && value >= 0) { "Invalid $label value" }
+            total += value
+            require(total.isFinite() && total >= 0) { "Unsafe $label total" }
+        }
+        return total
+    }
+
+    val totalCaloriesDouble = safeSum(matches.map { it.nutrition.calories }, "calorie")
+    require(totalCaloriesDouble <= Int.MAX_VALUE.toDouble()) { "Calorie total exceeds supported range" }
+    val totalCalories = totalCaloriesDouble.roundToInt()
+    val totalProtein = safeSum(matches.map { it.nutrition.protein }, "protein")
+    val totalCarbs = safeSum(matches.map { it.nutrition.carbs }, "carbohydrate")
+    val totalFat = safeSum(matches.map { it.nutrition.fat }, "fat")
+
     val allGramsKnown = matches.all { it.grams != null }
+    val totalGrams = if (allGramsKnown) {
+        safeSum(matches.map { requireNotNull(it.grams) }, "serving mass")
+    } else {
+        1.0
+    }
+
     // Existing ingredient editing requires real mass; retain per-food provenance even without it.
     val ingredients = if (allGramsKnown) matches.map { match ->
         MealIngredient(match.candidate.canonicalName, match.grams!!, match.nutrition.calories.roundToInt(),
@@ -104,8 +137,8 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
                 val values = matches.mapNotNull { it.nutrition.micronutrients[key] }
                 val unit = values.firstOrNull()?.unit ?: return@forEach
                 if (values.size != matches.size || values.any { it.unit != unit }) return@forEach
-                val total = values.sumOf { it.amount }
-                if (total.isFinite() && total >= 0) put(key, NutrientAmount(total, unit))
+                val total = safeSum(values.map { it.amount }, "micronutrient $key")
+                put(key, NutrientAmount(total, unit))
             }
         }
     }
@@ -121,12 +154,11 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
     )
     return FoodAnalysis(
         name = matches.joinToString(", ") { it.candidate.canonicalName },
-        calories = if (ingredients.isNotEmpty()) ingredients.sumOf { it.calories }
-            else matches.sumOf { it.nutrition.calories }.roundToInt(),
-        protein = matches.sumOf { it.nutrition.protein },
-        carbs = matches.sumOf { it.nutrition.carbs },
-        fat = matches.sumOf { it.nutrition.fat },
-        servingSizeGrams = if (allGramsKnown) matches.sumOf { it.grams!! } else 1.0,
+        calories = totalCalories,
+        protein = totalProtein,
+        carbs = totalCarbs,
+        fat = totalFat,
+        servingSizeGrams = totalGrams,
         servingSizeIsKnown = allGramsKnown,
         sugar = nutrient("sugar", "g"),
         addedSugar = nutrient("addedSugar", "g"),
