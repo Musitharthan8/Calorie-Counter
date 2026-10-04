@@ -193,6 +193,9 @@ internal data class ServingUnitOptionsParseResult(
 )
 
 internal object FoodJsonParser {
+    private const val MAX_AI_NUTRITION_VALUE = 1_000_000_000.0
+    private const val MAX_AI_SERVING_GRAMS = 1_000_000.0
+
 
     fun extractJson(text: String): String {
         var cleaned = text.trim()
@@ -236,47 +239,66 @@ internal object FoodJsonParser {
         val json = runCatching { JSONObject(extractedJson) }.getOrNull()
             ?: throw AiError.InvalidResponse
         val name = json.optString("name").takeIf { it.isNotEmpty() } ?: throw AiError.InvalidResponse
-        val responseServingSizeGrams = optDouble(json, "serving_size_grams")
+        fun parsedDouble(key: String): Double? = optDouble(json, key)
+        fun requiredNutrition(key: String): Double =
+            parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        fun optionalNutrition(key: String): Double? {
+            if (!json.has(key) || json.isNull(key)) return null
+            return parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        }
+
+        val responseServingSizeGrams = if (json.has("serving_size_grams") && !json.isNull("serving_size_grams")) {
+            parsedDouble("serving_size_grams")
+                ?.takeIf { it > 0.0 && it <= MAX_AI_SERVING_GRAMS }
+                ?: throw AiError.InvalidResponse
+        } else {
+            null
+        }
         val servingSizeGrams = responseServingSizeGrams ?: 1.0
         val unitOptionsResult = parseServingUnitOptionsResult(extractedJson, responseServingSizeGrams)
         val unitOptions = unitOptionsResult.options
         val selectedOption = unitOptions.firstOrNull()
-        fun optDouble(key: String): Double? =
-            optDouble(json, key)
+        val calorieValue = requiredNutrition("calories")
+            .takeIf { it <= Int.MAX_VALUE.toDouble() }
+            ?: throw AiError.InvalidResponse
         val analysis = FoodAnalysis(
             name = name,
-            calories = json.optInt("calories"),
-            protein = optDouble("protein") ?: 0.0,
-            carbs = optDouble("carbs") ?: 0.0,
-            fat = optDouble("fat") ?: 0.0,
+            calories = calorieValue.roundToInt(),
+            protein = requiredNutrition("protein"),
+            carbs = requiredNutrition("carbs"),
+            fat = requiredNutrition("fat"),
             servingSizeGrams = servingSizeGrams,
             emoji = json.optString("emoji").takeIf { it.isNotEmpty() },
-            sugar = optDouble("sugar"),
-            addedSugar = optDouble("added_sugar"),
-            fiber = optDouble("fiber"),
-            saturatedFat = optDouble("saturated_fat"),
-            monounsaturatedFat = optDouble("monounsaturated_fat"),
-            polyunsaturatedFat = optDouble("polyunsaturated_fat"),
-            cholesterol = optDouble("cholesterol"),
-            caffeine = optDouble("caffeine"),
+            sugar = optionalNutrition("sugar"),
+            addedSugar = optionalNutrition("added_sugar"),
+            fiber = optionalNutrition("fiber"),
+            saturatedFat = optionalNutrition("saturated_fat"),
+            monounsaturatedFat = optionalNutrition("monounsaturated_fat"),
+            polyunsaturatedFat = optionalNutrition("polyunsaturated_fat"),
+            cholesterol = optionalNutrition("cholesterol"),
+            caffeine = optionalNutrition("caffeine"),
             supplementalNutrients = SupplementalNutrient.values().mapNotNull { nutrient ->
-                optDouble(nutrient.apiKey)?.let { nutrient.storageKey to it }
+                optionalNutrition(nutrient.apiKey)?.let { nutrient.storageKey to it }
             }.toMap(),
-            sodium = optDouble("sodium"),
-            potassium = optDouble("potassium"),
-            transFat = optDouble("trans_fat"),
-            calcium = optDouble("calcium"),
-            iron = optDouble("iron"),
-            magnesium = optDouble("magnesium"),
-            zinc = optDouble("zinc"),
-            vitaminA = optDouble("vitamin_a"),
-            vitaminC = optDouble("vitamin_c"),
-            vitaminD = optDouble("vitamin_d"),
-            vitaminB12 = optDouble("vitamin_b12"),
-            vitaminE = optDouble("vitamin_e"),
-            vitaminK = optDouble("vitamin_k"),
-            folate = optDouble("folate"),
-            omega3 = optDouble("omega_3"),
+            sodium = optionalNutrition("sodium"),
+            potassium = optionalNutrition("potassium"),
+            transFat = optionalNutrition("trans_fat"),
+            calcium = optionalNutrition("calcium"),
+            iron = optionalNutrition("iron"),
+            magnesium = optionalNutrition("magnesium"),
+            zinc = optionalNutrition("zinc"),
+            vitaminA = optionalNutrition("vitamin_a"),
+            vitaminC = optionalNutrition("vitamin_c"),
+            vitaminD = optionalNutrition("vitamin_d"),
+            vitaminB12 = optionalNutrition("vitamin_b12"),
+            vitaminE = optionalNutrition("vitamin_e"),
+            vitaminK = optionalNutrition("vitamin_k"),
+            folate = optionalNutrition("folate"),
+            omega3 = optionalNutrition("omega_3"),
             ingredients = parseIngredients(json),
             servingUnitOptions = unitOptions,
             selectedServingUnit = if (responseServingSizeGrams == null) "serving" else selectedOption?.unit,
@@ -300,7 +322,14 @@ internal object FoodJsonParser {
                 val protein = optDouble(item, "protein") ?: continue
                 val carbs = optDouble(item, "carbs") ?: continue
                 val fat = optDouble(item, "fat") ?: continue
-                if (name.isEmpty() || grams <= 0 || listOf(calories, protein, carbs, fat).any { it < 0 }) continue
+                if (
+                    name.isEmpty() ||
+                    grams <= 0 ||
+                    grams > MAX_AI_SERVING_GRAMS ||
+                    calories < 0 ||
+                    calories > Int.MAX_VALUE.toDouble() ||
+                    listOf(protein, carbs, fat).any { it < 0 || it > MAX_AI_NUTRITION_VALUE }
+                ) continue
                 add(
                     MealIngredient(
                         name = name,
