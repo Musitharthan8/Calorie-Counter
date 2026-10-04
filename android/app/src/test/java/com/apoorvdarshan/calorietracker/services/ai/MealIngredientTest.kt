@@ -166,6 +166,33 @@ class MealIngredientTest {
     }
 
     @Test
+    fun nutritionLabelParserRejectsNegativeValuesAndInvalidServingMass() {
+        val negativeFat = """
+            {"name":"Label","calories_per_100g":100,"protein_per_100g":5,"carbs_per_100g":15,"fat_per_100g":-1}
+        """.trimIndent()
+        val badServing = """
+            {"name":"Label","calories_per_100g":100,"protein_per_100g":5,"carbs_per_100g":15,"fat_per_100g":2,"serving_size_grams":0}
+        """.trimIndent()
+
+        assertTrue(runCatching { FoodJsonParser.parseLabelResponse(negativeFat) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseLabelResponse(badServing) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun nutritionLabelScalingRejectsUnsafeTotals() {
+        val label = NutritionLabelAnalysis(
+            name = "Label",
+            caloriesPer100g = Int.MAX_VALUE.toDouble(),
+            proteinPer100g = 1.0,
+            carbsPer100g = 1.0,
+            fatPer100g = 1.0
+        )
+
+        assertTrue(runCatching { label.scaled(200.0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { label.scaled(Double.POSITIVE_INFINITY) }.exceptionOrNull() is IllegalArgumentException)
+    }
+
+    @Test
     fun progressiveMealPromptUsesChronologicalScaleDifferences() {
         val prompt = multiPhotoAnalysisPrompt(
             progressiveMeal = true,
