@@ -18,6 +18,7 @@ import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.IOException
 import java.util.ArrayDeque
+import java.util.concurrent.TimeUnit
 
 /**
  * Evidence-backed branded-food source using Open Food Facts full-text search.
@@ -161,6 +162,9 @@ class OpenFoodFactsNutritionSource(
     }
 
     private suspend fun request(url: HttpUrl): SearchReply {
+        val http = client.newBuilder()
+            .callTimeout(8, TimeUnit.SECONDS)
+            .build()
         val request = Request.Builder()
             .url(url)
             .addHeader("User-Agent", USER_AGENT)
