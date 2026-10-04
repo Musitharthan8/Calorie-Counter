@@ -142,6 +142,26 @@ class OfflineFoodModelsTest {
         assertFalse(result.complete)
     }
 
+    @Test fun truncatedExactCandidateSetsFailClosedInsteadOfHidingAmbiguity() = runBlocking {
+        val records = (1..4).map { index ->
+            record(name = "Rice", aliases = setOf("rice")).copy(sourceFoodId = "rice-$index")
+        }
+        val guardedSource = CanonicalOfflineNutritionSource(
+            sourceKind = NutritionSourceKind.USDA,
+            manifest = manifest.copy(recordCount = records.size),
+            index = OfflineFoodIndex { _, limit -> records.take(limit) },
+            searchLimit = 2
+        )
+        val mention = FoodMention(
+            id = "1",
+            name = "rice",
+            originalWording = "100 g rice",
+            quantity = FoodQuantity(100.0, "g")
+        )
+
+        assertTrue(guardedSource.search(mention).isEmpty())
+    }
+
     @Test fun explicitBrandMustMatchSourceBrand() = runBlocking {
         val branded = record(name = "Greek yoghurt", aliases = setOf("greek yoghurt"), brand = "Brand A")
         val mention = FoodMention(
