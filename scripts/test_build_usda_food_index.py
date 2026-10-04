@@ -14,6 +14,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("build_usda_food_index.py")
@@ -29,6 +30,66 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, object]]) 
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_json_archive(path: Path, payload: dict[str, object]) -> Path:
+    json_name = path.with_suffix("").name + ".json"
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(json_name, json.dumps(payload))
+    return path
+
+
+def foundation_json_food(fdc_id: int = 321358) -> dict[str, object]:
+    return {
+        "fdcId": fdc_id,
+        "dataType": "Foundation",
+        "description": "Hummus, commercial",
+        "foodNutrients": [
+            {"nutrient": {"id": 1003, "unitName": "g"}, "amount": 7.35},
+            {"nutrient": {"id": 1004, "unitName": "g"}, "amount": 17.1},
+            {"nutrient": {"id": 1005, "unitName": "g"}, "amount": 14.9},
+            {"nutrient": {"id": 2047, "unitName": "kcal"}, "amount": 230.0},
+            {"nutrient": {"id": 2048, "unitName": "kcal"}, "amount": 229.0},
+            {"nutrient": {"id": 1093, "unitName": "mg"}, "amount": 438.0},
+            {"nutrient": {"id": 1114, "unitName": "UG"}, "amount": 1.0},
+        ],
+        "foodPortions": [
+            {
+                "amount": 2,
+                "measureUnit": {"name": "tablespoon", "abbreviation": "tbsp"},
+                "modifier": "",
+                "gramWeight": 33.9,
+            }
+        ],
+    }
+
+
+def survey_json_food(fdc_id: int = 2705384) -> dict[str, object]:
+    return {
+        "fdcId": fdc_id,
+        "dataType": "Survey (FNDDS)",
+        "description": "Milk, NFS",
+        "foodNutrients": [
+            {"nutrient": {"id": 1003, "unitName": "g"}, "amount": 3.33},
+            {"nutrient": {"id": 1004, "unitName": "g"}, "amount": 2.14},
+            {"nutrient": {"id": 1005, "unitName": "g"}, "amount": 4.83},
+            {"nutrient": {"id": 1008, "unitName": "kcal"}, "amount": 52.0},
+        ],
+        "foodPortions": [
+            {
+                "measureUnit": {"name": "undetermined", "abbreviation": "undetermined"},
+                "modifier": "90000",
+                "gramWeight": 0,
+                "portionDescription": "Quantity not specified",
+            },
+            {
+                "measureUnit": {"name": "undetermined", "abbreviation": "undetermined"},
+                "modifier": "30000",
+                "gramWeight": 30.5,
+                "portionDescription": "1 fl oz",
+            },
+        ],
+    }
 
 
 def make_fdc_dir(
@@ -225,6 +286,92 @@ class UsdaImporterTest(unittest.TestCase):
             portions = usda.read_portions(root, usda.read_foods(root))[1]
             self.assertEqual(2, len(portions))
             self.assertFalse(any(p["is_default"] for p in portions))
+
+    def test_official_json_shapes_build_without_csv_expansion(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            foundation = write_json_archive(
+                temp_path / "foundation.zip",
+                {"FoundationFoods": [foundation_json_food()]},
+            )
+            survey = write_json_archive(
+                temp_path / "survey.zip",
+                {"SurveyFoods": [survey_json_food()]},
+            )
+            output = temp_path / "usda.sqlite"
+
+            count = usda.build_from_inputs(
+                [foundation, survey],
+                output,
+                "foundation-json-test+fndds-json-test",
+            )
+            self.assertEqual(2, count)
+
+            with sqlite3.connect(output) as conn:
+                hummus = conn.execute(
+                    """
+                    SELECT calories, protein, carbs, fat, micronutrients_json
+                    FROM foods WHERE source_food_id='321358'
+                    """
+                ).fetchone()
+                # Published Foundation 2048 energy outranks 2047 when 1008 is absent.
+                self.assertEqual((229.0, 7.35, 14.9, 17.1), hummus[:4])
+                hummus_micros = json.loads(hummus[4])
+                self.assertEqual({"amount": 438.0, "unit": "mg"}, hummus_micros["sodium"])
+                self.assertEqual({"amount": 1.0, "unit": "ug"}, hummus_micros["vitaminD"])
+
+                foundation_portion = conn.execute(
+                    """
+                    SELECT amount, unit, grams, is_default
+                    FROM portions WHERE source_food_id='321358'
+                    """
+                ).fetchone()
+                self.assertEqual((2.0, "tbsp", 33.9, 1), foundation_portion)
+
+                survey_portion = conn.execute(
+                    """
+                    SELECT amount, unit, grams, is_default
+                    FROM portions WHERE source_food_id='2705384'
+                    """
+                ).fetchone()
+                self.assertEqual((1.0, "fl oz", 30.5, 1), survey_portion)
+
+    def test_json_energy_1008_outranks_foundation_alternatives(self) -> None:
+        item = foundation_json_food()
+        item["foodNutrients"].append(
+            {"nutrient": {"id": 1008, "unitName": "kcal"}, "amount": 231.0}
+        )
+        nutrients = usda._json_nutrients(item)
+        self.assertEqual((231.0, "kcal"), nutrients["calories"])
+
+    def test_json_multiple_portions_preserve_ambiguity(self) -> None:
+        item = survey_json_food()
+        item["foodPortions"].append(
+            {
+                "measureUnit": {"name": "undetermined", "abbreviation": "undetermined"},
+                "gramWeight": 244.0,
+                "portionDescription": "1 cup",
+            }
+        )
+        portions = usda._json_portions(item)
+        self.assertEqual(2, len(portions))
+        self.assertFalse(any(portion["is_default"] for portion in portions))
+        self.assertEqual({"fl oz", "cup"}, {portion["unit"] for portion in portions})
+
+    def test_duplicate_ids_across_json_inputs_fail_instead_of_overwriting(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            first = write_json_archive(
+                temp_path / "one.zip",
+                {"FoundationFoods": [foundation_json_food(42)]},
+            )
+            duplicate = survey_json_food(42)
+            second = write_json_archive(
+                temp_path / "two.zip",
+                {"SurveyFoods": [duplicate]},
+            )
+            with self.assertRaises(SystemExit):
+                usda.build_from_inputs([first, second], temp_path / "out.sqlite", "test")
 
     def test_unknown_portion_wording_does_not_become_a_fake_known_unit(self) -> None:
         self.assertIsNone(usda.portion_unit("1 unspecified scoop"))
