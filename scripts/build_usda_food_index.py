@@ -308,6 +308,7 @@ def create_schema(conn: sqlite3.Connection) -> None:
             grams REAL NOT NULL,
             description TEXT,
             is_default INTEGER NOT NULL DEFAULT 0,
+            is_derived INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (source_food_id, unit, amount, grams),
             FOREIGN KEY (source_food_id) REFERENCES foods(source_food_id) ON DELETE CASCADE
         );
@@ -370,8 +371,8 @@ def write_food(
         conn.execute(
             """
             INSERT OR IGNORE INTO portions(
-                source_food_id, amount, unit, grams, description, is_default
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                source_food_id, amount, unit, grams, description, is_default, is_derived
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 source_id,
@@ -380,6 +381,7 @@ def write_food(
                 float(portion["grams"]),
                 portion.get("description"),
                 1 if portion.get("is_default") else 0,
+                1 if portion.get("is_derived") else 0,
             ),
         )
     return True
