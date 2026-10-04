@@ -93,10 +93,32 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
             match.nutrition.protein, match.nutrition.carbs, match.nutrition.fat,
             nutritionProvenance = match.provenance)
     } else emptyList()
-    fun nutrient(key: String, unit: String): Double? {
-        val values = matches.map { it.nutrition.micronutrients[key] }
-        return if (values.all { it != null && it.unit == unit }) values.sumOf { it!!.amount } else null
+    val commonMicronutrients: Map<String, NutrientAmount> = if (matches.isEmpty()) {
+        emptyMap()
+    } else {
+        val commonKeys = matches
+            .map { it.nutrition.micronutrients.keys }
+            .reduce { left, right -> left intersect right }
+        buildMap {
+            commonKeys.forEach { key ->
+                val values = matches.mapNotNull { it.nutrition.micronutrients[key] }
+                val unit = values.firstOrNull()?.unit ?: return@forEach
+                if (values.size != matches.size || values.any { it.unit != unit }) return@forEach
+                val total = values.sumOf { it.amount }
+                if (total.isFinite() && total >= 0) put(key, NutrientAmount(total, unit))
+            }
+        }
     }
+    fun nutrient(key: String, unit: String): Double? =
+        commonMicronutrients[key]?.takeIf { it.unit == unit }?.amount
+
+    val legacyMicronutrientKeys = setOf(
+        "sugar", "addedSugar", "fiber", "saturatedFat", "monounsaturatedFat",
+        "polyunsaturatedFat", "cholesterol", "caffeine", "sodium", "potassium",
+        "transFat", "calcium", "iron", "magnesium", "zinc", "vitaminA",
+        "vitaminC", "vitaminD", "vitaminB12", "vitaminE", "vitaminK",
+        "folate", "omega3"
+    )
     return FoodAnalysis(
         name = matches.joinToString(", ") { it.candidate.canonicalName },
         calories = if (ingredients.isNotEmpty()) ingredients.sumOf { it.calories }
@@ -106,9 +128,30 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
         fat = matches.sumOf { it.nutrition.fat },
         servingSizeGrams = if (allGramsKnown) matches.sumOf { it.grams!! } else 1.0,
         servingSizeIsKnown = allGramsKnown,
-        sugar = nutrient("sugar", "g"), fiber = nutrient("fiber", "g"), sodium = nutrient("sodium", "mg"),
-        calcium = nutrient("calcium", "mg"), iron = nutrient("iron", "mg"), potassium = nutrient("potassium", "mg"),
-        vitaminC = nutrient("vitaminC", "mg"), vitaminD = nutrient("vitaminD", "ug"),
+        sugar = nutrient("sugar", "g"),
+        addedSugar = nutrient("addedSugar", "g"),
+        fiber = nutrient("fiber", "g"),
+        saturatedFat = nutrient("saturatedFat", "g"),
+        monounsaturatedFat = nutrient("monounsaturatedFat", "g"),
+        polyunsaturatedFat = nutrient("polyunsaturatedFat", "g"),
+        cholesterol = nutrient("cholesterol", "mg"),
+        caffeine = nutrient("caffeine", "mg"),
+        sourceNutrients = commonMicronutrients.filterKeys { it !in legacyMicronutrientKeys },
+        sodium = nutrient("sodium", "mg"),
+        potassium = nutrient("potassium", "mg"),
+        transFat = nutrient("transFat", "g"),
+        calcium = nutrient("calcium", "mg"),
+        iron = nutrient("iron", "mg"),
+        magnesium = nutrient("magnesium", "mg"),
+        zinc = nutrient("zinc", "mg"),
+        vitaminA = nutrient("vitaminA", "ug"),
+        vitaminC = nutrient("vitaminC", "mg"),
+        vitaminD = nutrient("vitaminD", "ug"),
+        vitaminB12 = nutrient("vitaminB12", "ug"),
+        vitaminE = nutrient("vitaminE", "mg"),
+        vitaminK = nutrient("vitaminK", "ug"),
+        folate = nutrient("folate", "ug"),
+        omega3 = nutrient("omega3", "g"),
         ingredients = ingredients,
         mealInterpretation = interpretation,
         nutritionProvenance = matches.map { it.provenance },
