@@ -460,6 +460,7 @@ def read_nutrients(
 ) -> dict[int, dict[str, tuple[float, str]]]:
     id_to_nbr = read_nutrient_id_map(csv_root)
     result: dict[int, dict[str, tuple[float, str]]] = defaultdict(dict)
+    energy_candidates: dict[int, dict[int, float]] = defaultdict(dict)
     with (csv_root / "food_nutrient.csv").open(newline="", encoding="utf-8-sig") as fh:
         for row in csv.DictReader(fh):
             try:
@@ -470,16 +471,30 @@ def read_nutrients(
                 continue
             if fdc_id not in foods or not math.isfinite(amount) or amount < 0:
                 continue
-            # Modern FDC dumps use nutrient_id values such as 1008 (energy),
-            # while nutrient.csv also carries legacy nutrient_nbr values such as 208.
-            # Prefer the modern id when we know it; only fall back to nutrient_nbr.
+
+            if raw_id in ENERGY_ID_PRECEDENCE:
+                energy_candidates[fdc_id][raw_id] = amount
+                continue
+
+            # Modern FDC IDs and legacy nutrient numbers are separate namespaces.
             mapped = NUTRIENTS.get(raw_id)
+            legacy_number = id_to_nbr.get(raw_id, raw_id)
             if mapped is None:
-                mapped = LEGACY_NUTRIENTS.get(id_to_nbr.get(raw_id, raw_id))
+                mapped = LEGACY_NUTRIENTS.get(legacy_number)
             if mapped is None:
                 continue
             key, unit = mapped
-            result[fdc_id][key] = (amount, unit)
+            if key == "calories":
+                # Legacy 208 is lower priority than published modern FDC kcal fields.
+                energy_candidates[fdc_id][208] = amount
+            else:
+                result[fdc_id][key] = (amount, unit)
+
+    for fdc_id, candidates in energy_candidates.items():
+        for nutrient_id in (*ENERGY_ID_PRECEDENCE, 208):
+            if nutrient_id in candidates:
+                result[fdc_id]["calories"] = (candidates[nutrient_id], "kcal")
+                break
     return result
 
 
