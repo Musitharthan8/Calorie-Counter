@@ -46,7 +46,7 @@ internal class SqliteOfflineFoodIndex(
         withContext(Dispatchers.IO) {
         val normalized = normalizeForIndex(query)
         if (normalized.isBlank()) return@withContext emptyList()
-        val capped = limit.coerceIn(1, 25)
+        val capped = limit.coerceIn(1, 64)
         val sql = """
             SELECT DISTINCT
                 f.source_food_id,
