@@ -113,7 +113,7 @@ internal class SqliteOfflineFoodIndex(
         val portions = mutableListOf<CanonicalFoodPortion>()
         database.rawQuery(
             """
-                SELECT amount, unit, grams, description, is_default
+                SELECT amount, unit, grams, description, is_default, is_derived
                 FROM portions
                 WHERE source_food_id = ?
                 ORDER BY is_default DESC, unit ASC, amount ASC
@@ -132,7 +132,8 @@ internal class SqliteOfflineFoodIndex(
                     unit = unit,
                     grams = grams,
                     description = portionCursor.getString(3)?.trim()?.takeIf { it.isNotEmpty() },
-                    isDefault = portionCursor.getInt(4) != 0
+                    isDefault = portionCursor.getInt(4) != 0,
+                    isDerived = portionCursor.getInt(5) != 0
                 )
             }
         }
