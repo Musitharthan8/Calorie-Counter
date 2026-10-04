@@ -544,11 +544,15 @@ class FoodAnalysisService(
             Use [] when no reliable non-gram label unit is visible. Do not include g/gram/grams in unit_options.
         """.trimIndent()
         val parsed = FoodJsonParser.parseLabelResponse(callAi(prompt, imageBytes))
-        return addingFallbackServingUnits(
-            analysis = parsed.analysis,
-            imageBytes = imageBytes,
-            shouldRequestFallback = parsed.shouldRequestServingUnitFallback
-        ).scaled(servingGrams)
+        return try {
+            addingFallbackServingUnits(
+                analysis = parsed.analysis,
+                imageBytes = imageBytes,
+                shouldRequestFallback = parsed.shouldRequestServingUnitFallback
+            ).scaled(servingGrams)
+        } catch (_: IllegalArgumentException) {
+            throw AiError.InvalidResponse
+        }
     }
 
     suspend fun extractAllergensFromLabReport(imageBytes: ByteArray): List<String> {
