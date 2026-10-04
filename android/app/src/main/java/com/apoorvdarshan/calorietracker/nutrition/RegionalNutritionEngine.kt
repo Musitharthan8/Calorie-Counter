@@ -112,6 +112,13 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
         ingredients = ingredients,
         mealInterpretation = interpretation,
         nutritionProvenance = matches.map { it.provenance },
-        nutritionWarnings = if (matches.any { it.provenance.estimated }) listOf("Includes saved estimates; check portion sizes.") else emptyList()
+        nutritionWarnings = buildList {
+            if (matches.any { it.provenance.estimated }) {
+                add("Includes estimated nutrition values; check source details.")
+            }
+            if (matches.any { it.provenance.portionEstimated }) {
+                add("One or more portion sizes are estimated or derived.")
+            }
+        }
     )
 }
