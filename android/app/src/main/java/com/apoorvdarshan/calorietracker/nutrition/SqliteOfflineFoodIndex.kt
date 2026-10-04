@@ -3,6 +3,8 @@ package com.apoorvdarshan.calorietracker.nutrition
 import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -40,9 +42,10 @@ internal class SqliteOfflineFoodIndex(
     }
     private val database: SQLiteDatabase get() = databaseLazy.value
 
-    override suspend fun search(query: String, limit: Int): List<CanonicalFoodRecord> {
+    override suspend fun search(query: String, limit: Int): List<CanonicalFoodRecord> =
+        withContext(Dispatchers.IO) {
         val normalized = normalizeForIndex(query)
-        if (normalized.isBlank()) return emptyList()
+        if (normalized.isBlank()) return@withContext emptyList()
         val capped = limit.coerceIn(1, 25)
         val sql = """
             SELECT DISTINCT
@@ -74,7 +77,7 @@ internal class SqliteOfflineFoodIndex(
                 readRecord(cursor)?.let(rows::add)
             }
         }
-        return rows
+        rows
     }
 
     private fun readRecord(cursor: Cursor): CanonicalFoodRecord? {
