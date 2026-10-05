@@ -49,7 +49,6 @@ import com.apoorvdarshan.calorietracker.models.MacroValueFormatter
 import kotlin.math.roundToInt
 import com.apoorvdarshan.calorietracker.models.IngredientPortion
 import com.apoorvdarshan.calorietracker.models.MealIngredient
-import com.apoorvdarshan.calorietracker.models.withUserEdits
 import com.apoorvdarshan.calorietracker.ui.theme.AppColors
 import kotlinx.serialization.Serializable
 
