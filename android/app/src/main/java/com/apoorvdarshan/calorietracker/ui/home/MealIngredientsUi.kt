@@ -49,6 +49,7 @@ import com.apoorvdarshan.calorietracker.models.MacroValueFormatter
 import kotlin.math.roundToInt
 import com.apoorvdarshan.calorietracker.models.IngredientPortion
 import com.apoorvdarshan.calorietracker.models.MealIngredient
+import com.apoorvdarshan.calorietracker.models.withUserEdits
 import com.apoorvdarshan.calorietracker.ui.theme.AppColors
 import kotlinx.serialization.Serializable
 
@@ -205,21 +206,13 @@ internal fun MealIngredientEditorDialog(
         val parsedProtein = number(protein) ?: return@let null
         val parsedCarbs = number(carbs) ?: return@let null
         val parsedFat = number(fat) ?: return@let null
-        val evidenceAdjusted = if (target.ingredient.grams > 0.0) {
-            runCatching {
-                target.ingredient.scaled(parsedGrams / target.ingredient.grams)
-            }.getOrNull()
-        } else {
-            null
-        }
-        (evidenceAdjusted ?: target.ingredient.copy(micronutrients = null)).copy(
+        target.ingredient.withUserEdits(
             name = validName,
             grams = parsedGrams,
             calories = parsedCalories.roundToInt(),
             protein = parsedProtein,
             carbs = parsedCarbs,
-            fat = parsedFat,
-            nutritionProvenance = target.ingredient.nutritionProvenance?.copy(userEdited = true)
+            fat = parsedFat
         )
     }
 
