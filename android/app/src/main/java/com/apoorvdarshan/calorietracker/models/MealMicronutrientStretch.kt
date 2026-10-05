@@ -127,12 +127,16 @@ fun List<MealIngredient>.micronutrientTotalsOrNull(): IngredientMicronutrientTot
             val unit = values.firstOrNull()?.unit ?: return@forEach
             if (values.size != maps.size || values.any { it.unit != unit }) return@forEach
             var total = 0.0
+            var valid = true
             values.forEach { nutrient ->
-                if (!nutrient.amount.isFinite() || nutrient.amount < 0.0) return@forEach
+                if (!valid || !nutrient.amount.isFinite() || nutrient.amount < 0.0) {
+                    valid = false
+                    return@forEach
+                }
                 total += nutrient.amount
-                if (!total.isFinite() || total < 0.0) return@forEach
+                if (!total.isFinite() || total < 0.0) valid = false
             }
-            put(key, NutrientAmount(total, unit))
+            if (valid) put(key, NutrientAmount(total, unit))
         }
     }
 
