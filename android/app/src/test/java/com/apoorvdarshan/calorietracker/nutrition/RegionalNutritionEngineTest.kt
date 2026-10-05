@@ -38,6 +38,35 @@ class RegionalNutritionEngineTest {
         } catch (_: CancellationException) { }
     }
 
+    @Test fun unresolvedSharedInputDoesNotSwallowFallbackCancellation() = runBlocking {
+        val interpretation = MealInterpretation(
+            rawText = "Photo meal",
+            foods = listOf(
+                FoodMention(
+                    id = "food-1",
+                    name = "unknown curry",
+                    originalWording = "visible unknown curry",
+                    quantity = FoodQuantity(150.0, "g", explicit = false)
+                )
+            )
+        )
+        val engine = RegionalNutritionEngine(
+            interpreter = LocalMealInterpreter(),
+            resolver = NutritionResolver(emptyList())
+        ) { fail("Text estimate should not be used"); estimate() }
+
+        try {
+            engine.analyzeInterpretation(
+                interpretation = interpretation,
+                fallbackLabel = "Photo meal",
+                fallbackEstimate = { throw CancellationException("user cancelled") }
+            )
+            fail("Expected fallback cancellation")
+        } catch (_: CancellationException) {
+            // expected
+        }
+    }
+
     @Test fun materialAmbiguitiesDoNotReachCalorieEstimation() = runBlocking {
         val engine = RegionalNutritionEngine(LocalMealInterpreter(), NutritionResolver(emptyList())) {
             fail("Do not guess bucket size or servings"); estimate()
