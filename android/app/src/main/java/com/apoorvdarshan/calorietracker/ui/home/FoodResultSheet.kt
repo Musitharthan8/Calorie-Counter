@@ -585,7 +585,7 @@ fun FoodResultSheet(
                         warningsAfterEdits().forEach { warning ->
                             Text(warning, style = MaterialTheme.typography.bodySmall)
                         }
-                        if (analysis.sourceNutrients.isNotEmpty()) {
+                        if (editableSourceNutrients.isNotEmpty()) {
                             Text(
                                 scaledSourceNutrients()
                                     .toSortedMap()
