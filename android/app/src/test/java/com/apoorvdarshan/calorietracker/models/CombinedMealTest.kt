@@ -66,6 +66,92 @@ class CombinedMealTest {
     }
 
     @Test
+    fun combinePreservesComponentMicronutrientsAndSourceAttribution() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g food",
+            canonicalName = "food"
+        )
+        val rice = FoodEntry(
+            name = "Rice",
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            source = FoodSource.TEXT_INPUT,
+            servingSizeGrams = 100.0,
+            sodium = 3.0,
+            sourceNutrients = mapOf(
+                "phosphorus" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(40.0, "mg")
+            ),
+            nutritionProvenance = listOf(provenance.copy(canonicalName = "rice"))
+        )
+        val chicken = FoodEntry(
+            name = "Chicken",
+            calories = 165,
+            protein = 31.0,
+            carbs = 0.0,
+            fat = 3.6,
+            source = FoodSource.TEXT_INPUT,
+            servingSizeGrams = 100.0,
+            sodium = 70.0,
+            sourceNutrients = mapOf(
+                "phosphorus" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(190.0, "mg")
+            ),
+            nutritionProvenance = listOf(provenance.copy(canonicalName = "chicken"))
+        )
+
+        val combined = combineFoodEntries(listOf(rice, chicken))
+
+        assertEquals(73.0, combined.sodium!!, 0.0)
+        assertEquals(
+            230.0,
+            combined.sourceNutrients.getValue("phosphorus").amount,
+            0.0
+        )
+        assertEquals(2, combined.nutritionProvenance.size)
+        assertEquals(3.0, combined.ingredients[0].micronutrients!!.getValue("sodium").amount, 0.0)
+        assertEquals(70.0, combined.ingredients[1].micronutrients!!.getValue("sodium").amount, 0.0)
+        assertEquals(
+            com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            combined.ingredients[0].nutritionProvenance!!.evidence
+        )
+    }
+
+    @Test
+    fun combineDoesNotInventMicronutrientsWhenAComponentIsUnknown() {
+        val known = FoodEntry(
+            name = "Known",
+            calories = 100,
+            protein = 5.0,
+            carbs = 10.0,
+            fat = 3.0,
+            source = FoodSource.TEXT_INPUT,
+            servingSizeGrams = 100.0,
+            sodium = 200.0
+        )
+        val unknown = FoodEntry(
+            name = "Unknown",
+            calories = 120,
+            protein = 6.0,
+            carbs = 12.0,
+            fat = 4.0,
+            source = FoodSource.MANUAL,
+            servingSizeGrams = 100.0
+        )
+
+        val combined = combineFoodEntries(listOf(known, unknown))
+
+        assertEquals(null, combined.sodium)
+        assertTrue(combined.sourceNutrients.isEmpty())
+        assertEquals(null, combined.ingredients[1].micronutrients)
+    }
+
+    @Test
     fun combineTotalsAndUsesLatestMealMetadata() {
         val older = FoodEntry(
             name = "Eggs",
