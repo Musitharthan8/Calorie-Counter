@@ -96,6 +96,80 @@ class MealIngredientTest {
     }
 
     @Test
+    fun proportionalIngredientEditPreservesScaledEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val edited = ingredient.withUserEdits(
+            name = "Rice",
+            grams = 200.0,
+            calories = 260,
+            protein = 4.0,
+            carbs = 56.0,
+            fat = 0.6
+        )
+
+        assertEquals(6.0, edited.micronutrients!!.getValue("sodium").amount, 0.0)
+        assertTrue(edited.nutritionProvenance!!.userEdited)
+    }
+
+    @Test
+    fun semanticIngredientEditInvalidatesSourceEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val renamed = ingredient.withUserEdits(
+            name = "Tofu",
+            grams = 100.0,
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3
+        )
+        assertEquals(null, renamed.micronutrients)
+        assertEquals(null, renamed.nutritionProvenance)
+
+        val macroEdited = ingredient.withUserEdits(
+            name = "Rice",
+            grams = 100.0,
+            calories = 200,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3
+        )
+        assertEquals(null, macroEdited.micronutrients)
+        assertEquals(null, macroEdited.nutritionProvenance)
+    }
+
+    @Test
     fun ingredientMathRejectsOverflowAndNonFiniteScaling() {
         val ingredient = MealIngredient("Food", 100.0, Int.MAX_VALUE, 10.0, 10.0, 10.0)
 
