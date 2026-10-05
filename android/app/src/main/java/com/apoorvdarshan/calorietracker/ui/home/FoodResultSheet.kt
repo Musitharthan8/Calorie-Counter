@@ -309,6 +309,12 @@ fun FoodResultSheet(
             // stretch the old whole-meal micronutrients by total mass when proportions changed.
             applyMicronutrients(componentMicros.snapshot)
             editableSourceNutrients = componentMicros.sourceNutrients
+        } else if (editableIngredients.any { it.micronutrients != null }) {
+            // Component evidence existed but the edited set is now incomplete (for example a
+            // source-backed chicken row was manually changed into tofu). Do not resurrect stale
+            // meal-level micronutrients through proportional stretching.
+            applyMicronutrients(MealMicronutrientSnapshot())
+            editableSourceNutrients = emptyMap()
         } else {
             // Legacy AI/manual meals may only have meal-level micros. Keep the old proportional
             // fallback for those records rather than inventing component-level evidence.
