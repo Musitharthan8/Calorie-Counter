@@ -154,6 +154,52 @@ def make_fdc_dir(
 
 
 class UsdaImporterTest(unittest.TestCase):
+    def test_fractional_json_portions_keep_the_source_amount(self) -> None:
+        for text, expected in (("1/2 cup", 0.5), ("1 1/2 cups", 1.5), ("0.5 cup", 0.5)):
+            with self.subTest(description=text):
+                item = {"foodPortions": [{"portionDescription": text, "gramWeight": 80.0}]}
+                portion = usda._json_portions(item)[0]
+                self.assertEqual(expected, portion["amount"])
+                self.assertEqual("cup", portion["unit"])
+                # Runtime scaling for one cup must use the original fractional reference.
+                self.assertEqual(80.0 / expected, portion["grams"] / portion["amount"])
+
+    def test_primary_portion_unit_wins_over_alternative_in_description(self) -> None:
+        item = {"foodPortions": [{
+            "amount": 1, "gramWeight": 40,
+            "measureUnit": {"name": "piece", "abbreviation": "piece"},
+            "portionDescription": "1 piece (about 1/4 cup)",
+        }]}
+        self.assertEqual("piece", usda._json_portions(item)[0]["unit"])
+        self.assertEqual("piece", usda.portion_unit("1 piece (about 1/4 cup)"))
+        self.assertEqual("fl oz", usda.portion_unit("1 fl oz"))
+
+    def test_explicit_invalid_json_amount_is_not_replaced_with_one(self) -> None:
+        for amount in (0, -1, "NaN", "Infinity", "invalid"):
+            with self.subTest(amount=amount):
+                item = {"foodPortions": [{
+                    "amount": amount, "portionDescription": "1 cup", "gramWeight": 160,
+                }]}
+                self.assertEqual([], usda._json_portions(item))
+        for text in ("1/0 cup", "0 cup", "-1 cup"):
+            with self.subTest(description=text):
+                self.assertEqual([], usda._json_portions({"foodPortions": [{
+                    "portionDescription": text, "gramWeight": 160,
+                }]}))
+
+    def test_csv_duplicate_ids_fail_without_replacing_existing_output(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = make_fdc_dir(Path(temp) / "source", fdc_id=1, description="Synthetic food")
+            output = Path(temp) / "out.sqlite"
+            output.write_bytes(b"existing output")
+            with self.assertRaises(SystemExit):
+                usda.build_from_csv_roots([root, root], output, "test")
+            self.assertEqual(b"existing output", output.read_bytes())
+            with (root / "food.csv").open("a") as fh:
+                fh.write("1,foundation_food,Conflicting synthetic food\n")
+            with self.assertRaises(SystemExit):
+                usda.read_foods(root)
+
     def test_fixture_build_has_schema_manifest_and_matching_sha(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "fixture.sqlite"
@@ -210,7 +256,8 @@ class UsdaImporterTest(unittest.TestCase):
                 description="Foundation energy fixture",
             )
             path = root / "food_nutrient.csv"
-            rows = list(csv.DictReader(path.open(newline="", encoding="utf-8")))
+            with path.open(newline="", encoding="utf-8") as fh:
+                rows = list(csv.DictReader(fh))
             for row in rows:
                 if row["nutrient_id"] == "1008":
                     row["nutrient_id"] = "2048"

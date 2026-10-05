@@ -300,23 +300,29 @@ def _json_nutrients(item: dict[str, object]) -> dict[str, tuple[float, str]]:
     return result
 
 
+# Fraction alternatives must precede decimals so "1/2" cannot be read as "1".
+PORTION_AMOUNT_PREFIX = re.compile(
+    r"^\s*([+-]?(?:\d+\s+\d+\s*/\s*\d+|\d+\s*/\s*\d+|\d+(?:\.\d+)?))(?=\s|$)"
+)
+
+
 def _leading_portion_amount(description: str) -> float | None:
-    match = re.match(r"^\s*(\d+(?:\.\d+)?|\d+\s*/\s*\d+)\b", description)
+    match = PORTION_AMOUNT_PREFIX.match(description)
     if match is None:
         return None
-    token = match.group(1).replace(" ", "")
-    if "/" in token:
-        numerator, denominator = token.split("/", 1)
-        try:
-            denominator_value = float(denominator)
-            result = float(numerator) / denominator_value
-        except (TypeError, ValueError, ZeroDivisionError):
-            return None
-    else:
-        try:
+    token = match.group(1)
+    try:
+        if "/" in token:
+            numerator_text, denominator_text = token.split("/", 1)
+            parts = numerator_text.split()
+            if len(parts) == 2:
+                result = float(parts[0]) + float(parts[1]) / float(denominator_text)
+            else:
+                result = float(parts[0]) / float(denominator_text)
+        else:
             result = float(token)
-        except ValueError:
-            return None
+    except (ValueError, ZeroDivisionError):
+        return None
     return result if math.isfinite(result) and result > 0 else None
 
 
@@ -345,19 +351,23 @@ def _json_portions(item: dict[str, object]) -> list[dict[str, object]]:
             if text and text.lower() != "undetermined"
         )
 
-        amount = _finite_nonnegative(raw.get("amount"))
-        if amount is None or amount <= 0:
-            amount = _leading_portion_amount(description) or 1.0
+        raw_amount = raw.get("amount")
+        if raw_amount is not None:
+            amount = _finite_nonnegative(raw_amount)
+            if amount is None or amount <= 0:
+                continue  # An invalid explicit amount must not become an invented one-unit portion.
+        else:
+            amount = _leading_portion_amount(description)
+            if amount is None:
+                if re.match(r"^\s*[+-]?\d", description):
+                    continue  # Includes zero, negative, malformed and zero-denominator quantities.
+                amount = 1.0  # Source measure without a stated count describes one such measure.
 
         unit = portion_unit(measure_text, description, str(raw.get("modifier") or ""))
         if unit is None:
             # Keep an unknown source measure only as an exact, source-authored label. It will not
             # match cup/piece/etc. unless the interpreter emits the same normalized wording.
-            stripped = re.sub(
-                r"^\s*(?:\d+(?:\.\d+)?|\d+\s*/\s*\d+)\s*",
-                "",
-                description,
-            ).strip()
+            stripped = PORTION_AMOUNT_PREFIX.sub("", description).strip()
             unit = (stripped or measure_text)[:48] or None
         if not unit:
             continue
@@ -462,7 +472,11 @@ def read_foods(csv_root: Path) -> dict[int, dict[str, str]]:
             except (KeyError, TypeError, ValueError):
                 continue
             description = (row.get("description") or "").strip()
+            if fdc_id <= 0:
+                continue
             if description:
+                if fdc_id in result:
+                    raise SystemExit(f"Duplicate USDA FDC ID {fdc_id} in {csv_root}")
                 result[fdc_id] = row
     return result
 
@@ -529,10 +543,14 @@ def read_nutrients(
 
 
 def portion_unit(*texts: str) -> str | None:
-    haystack = " ".join(t for t in texts if t).strip()
-    for pattern, unit in UNIT_PATTERNS:
-        if pattern.search(haystack):
-            return unit
+    # Prefer the source's primary measure over later description/modifier alternatives.
+    # Within a description, use the first unit, not the first regex in a global priority list.
+    for text in texts:
+        matches = [(match.start(), order, unit)
+                   for order, (pattern, unit) in enumerate(UNIT_PATTERNS)
+                   if (match := pattern.search(text)) is not None]
+        if matches:
+            return min(matches)[2]
     return None
 
 
@@ -796,40 +814,8 @@ def build_from_inputs(input_paths: list[Path], output: Path, dataset_version: st
 
 
 def build_from_csv_roots(csv_roots: list[Path], output: Path, dataset_version: str) -> int:
-    foods: dict[int, dict[str, str]] = {}
-    nutrients: dict[int, dict[str, tuple[float, str]]] = {}
-    portions: dict[int, list[dict[str, object]]] = {}
-
-    for csv_root in csv_roots:
-        source_foods = read_foods(csv_root)
-        source_nutrients = read_nutrients(csv_root, source_foods)
-        source_portions = read_portions(csv_root, source_foods)
-        foods.update(source_foods)
-        nutrients.update(source_nutrients)
-        portions.update(source_portions)
-
-    output.parent.mkdir(parents=True, exist_ok=True)
-    if output.exists():
-        output.unlink()
-    conn = sqlite3.connect(output)
-    try:
-        create_schema(conn)
-        count = 0
-        for fdc_id in sorted(foods):
-            if write_food(
-                conn,
-                fdc_id,
-                foods[fdc_id],
-                nutrients.get(fdc_id, {}),
-                portions.get(fdc_id, []),
-            ):
-                count += 1
-        conn.commit()
-        conn.execute("PRAGMA optimize")
-    finally:
-        conn.close()
-    write_manifest(output, dataset_version, count)
-    return count
+    # One merge/build path keeps duplicate-ID checks identical for JSON and legacy CSV callers.
+    return build_from_inputs(csv_roots, output, dataset_version)
 
 
 def build_fixture(output: Path) -> int:
