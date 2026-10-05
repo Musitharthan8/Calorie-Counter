@@ -1,6 +1,7 @@
 package com.apoorvdarshan.calorietracker.models
 
 import kotlinx.serialization.Serializable
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @Serializable
@@ -25,6 +26,57 @@ data class MealIngredient(
 ) {
     val allImageFilenames: List<String>
         get() = (listOfNotNull(imageFilename) + additionalImageFilenames).distinct()
+
+    /**
+     * Apply review-sheet edits without letting source evidence drift onto a different food/composition.
+     *
+     * Per-component micronutrients/provenance survive only when the edit is a pure proportional
+     * serving change of the same ingredient. Identity or manual macro changes invalidate that
+     * component-level source evidence; the parent meal still records that the user edited nutrition.
+     */
+    fun withUserEdits(
+        name: String,
+        grams: Double,
+        calories: Int,
+        protein: Double,
+        carbs: Double,
+        fat: Double
+    ): MealIngredient {
+        require(name.isNotBlank())
+        require(grams.isFinite() && grams > 0.0)
+        require(calories >= 0)
+        require(listOf(protein, carbs, fat).all { it.isFinite() && it >= 0.0 })
+
+        val proportional = if (this.grams.isFinite() && this.grams > 0.0) {
+            runCatching { scaled(grams / this.grams) }.getOrNull()
+        } else {
+            null
+        }
+        fun close(actual: Double, expected: Double): Boolean =
+            abs(actual - expected) <= maxOf(0.05, abs(expected) * 0.001)
+
+        val sourceEvidenceStillApplies = proportional != null &&
+            name.trim() == this.name.trim() &&
+            calories == proportional.calories &&
+            close(protein, proportional.protein) &&
+            close(carbs, proportional.carbs) &&
+            close(fat, proportional.fat)
+
+        return copy(
+            name = name.trim(),
+            grams = grams,
+            calories = calories,
+            protein = protein,
+            carbs = carbs,
+            fat = fat,
+            nutritionProvenance = if (sourceEvidenceStillApplies) {
+                proportional?.nutritionProvenance?.copy(userEdited = true)
+            } else {
+                null
+            },
+            micronutrients = if (sourceEvidenceStillApplies) proportional?.micronutrients else null
+        )
+    }
 
     fun scaled(factor: Double): MealIngredient {
         require(factor.isFinite() && factor >= 0.0) { "Invalid ingredient scale" }
