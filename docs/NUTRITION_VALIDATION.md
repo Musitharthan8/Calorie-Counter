@@ -54,3 +54,18 @@ Fix failures before considering review readiness.
 
 No production USDA or INDB assets were generated or bundled in this audit.
 SG FoodID, MyFCD and INDB redistribution licensing gates are unchanged.
+
+## Follow-up CSV consistency audit, 5 October 2026
+
+Baseline: `f7ba96483a0f9ef65bc6ea68f10680221d1f72be`.
+The full importer suite executed successfully with **28 tests passed**, and
+`git diff --check` passed after these changes:
+
+- conflicting CSV nutrient values reject the food, independently of row order;
+- identical repeated nutrient rows remain usable;
+- declared CSV nutrient units are checked without inventing conversions;
+- JSON and CSV share nutrient-unit normalization.
+
+New regressions reproduced the CSV conflicts/unit gaps before the fix.
+The Android and GitHub Actions blockers above remain unresolved; this follow-up
+contains Python/import documentation changes only and does not establish Android validation.

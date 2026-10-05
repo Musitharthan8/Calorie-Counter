@@ -238,7 +238,7 @@ def _load_json_document(path: Path) -> dict[str, object]:
     return value
 
 
-def _normalize_json_unit(value: object) -> str:
+def _normalize_nutrient_unit(value: object) -> str:
     raw = str(value or "").strip().lower()
     return {
         "µg": "ug",
@@ -271,7 +271,7 @@ def _json_nutrients(item: dict[str, object]) -> dict[str, tuple[float, str]]:
         amount = _finite_nonnegative(raw_entry.get("amount"))
         if amount is None:
             continue
-        unit = _normalize_json_unit(raw_nutrient.get("unitName"))
+        unit = _normalize_nutrient_unit(raw_nutrient.get("unitName"))
 
         if nutrient_id in ENERGY_ID_PRECEDENCE:
             if unit == "kcal":
@@ -498,11 +498,34 @@ def read_nutrient_id_map(csv_root: Path) -> dict[int, int]:
     return result
 
 
+def read_nutrient_units(csv_root: Path) -> dict[int, str]:
+    """Validate declared CSV units when metadata exists; never guess a conversion."""
+    path = csv_root / "nutrient.csv"
+    if not path.exists():
+        return {}
+    result: dict[int, str] = {}
+    with path.open(newline="", encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            if "unit_name" not in row:
+                continue  # Older exports may omit the metadata column entirely.
+            try:
+                nutrient_id = int(row["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            unit = _normalize_nutrient_unit(row.get("unit_name"))
+            if nutrient_id in result and result[nutrient_id] != unit:
+                raise SystemExit(f"Conflicting USDA units for nutrient {nutrient_id}")
+            result[nutrient_id] = unit
+    return result
+
+
 def read_nutrients(
     csv_root: Path,
     foods: dict[int, dict[str, str]],
 ) -> dict[int, dict[str, tuple[float, str]]]:
     id_to_nbr = read_nutrient_id_map(csv_root)
+    declared_units = read_nutrient_units(csv_root)
+    conflicted_foods: set[int] = set()
     result: dict[int, dict[str, tuple[float, str]]] = defaultdict(dict)
     energy_candidates: dict[int, dict[int, float]] = defaultdict(dict)
     with (csv_root / "food_nutrient.csv").open(newline="", encoding="utf-8-sig") as fh:
@@ -517,6 +540,11 @@ def read_nutrients(
                 continue
 
             if raw_id in ENERGY_ID_PRECEDENCE:
+                if raw_id in declared_units and declared_units[raw_id] != "kcal":
+                    continue
+                existing = energy_candidates[fdc_id].get(raw_id)
+                if existing is not None and existing != amount:
+                    conflicted_foods.add(fdc_id)
                 energy_candidates[fdc_id][raw_id] = amount
                 continue
 
@@ -528,17 +556,29 @@ def read_nutrients(
             if mapped is None:
                 continue
             key, unit = mapped
+            if raw_id in declared_units and declared_units[raw_id] != unit:
+                continue
             if key == "calories":
                 # Legacy 208 is lower priority than published modern FDC kcal fields.
+                existing = energy_candidates[fdc_id].get(208)
+                if existing is not None and existing != amount:
+                    conflicted_foods.add(fdc_id)
                 energy_candidates[fdc_id][208] = amount
             else:
-                result[fdc_id][key] = (amount, unit)
+                candidate = (amount, unit)
+                existing = result[fdc_id].get(key)
+                if existing is not None and existing != candidate:
+                    conflicted_foods.add(fdc_id)
+                result[fdc_id][key] = candidate
 
     for fdc_id, candidates in energy_candidates.items():
         for nutrient_id in (*ENERGY_ID_PRECEDENCE, 208):
             if nutrient_id in candidates:
                 result[fdc_id]["calories"] = (candidates[nutrient_id], "kcal")
                 break
+    # JSON rejects conflicting nutrient rows for an entire food; CSV must not depend on row order.
+    for fdc_id in conflicted_foods:
+        result.pop(fdc_id, None)
     return result
 
 

@@ -87,6 +87,12 @@ skipped for automatic resolution rather than made to look database-authored.
 
 Optional micronutrients remain optional. Missing values stay missing, not zero.
 
+Both JSON and CSV reject conflicting repeated nutrient values for a food. Identical repeated
+values are harmless. Published energy variants remain distinct and use the documented precedence.
+Where CSV supplies `nutrient.csv` unit metadata, declared units must match the canonical nutrient
+unit; incompatible or blank declared units are not silently converted or treated as grams.
+Legacy CSV exports without that metadata column retain the stable nutrient-ID unit contract.
+
 ## Portions
 
 USDA portion data are used only when USDA explicitly supplies a positive gram weight. In CSV this

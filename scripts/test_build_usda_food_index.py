@@ -200,6 +200,41 @@ class UsdaImporterTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 usda.read_foods(root)
 
+    def test_conflicting_csv_nutrients_reject_food_in_either_row_order(self) -> None:
+        for nutrient_id in (1003, 1008, 2048):
+            for first, second in ((1.0, 2.0), (2.0, 1.0)):
+                with self.subTest(id=nutrient_id, first=first), tempfile.TemporaryDirectory() as temp:
+                    root = make_fdc_dir(Path(temp) / "source", fdc_id=1, description="Synthetic food")
+                    path = root / "food_nutrient.csv"
+                    with path.open(newline="") as fh:
+                        rows = [r for r in csv.DictReader(fh) if int(r["nutrient_id"]) != nutrient_id]
+                    rows += [{"fdc_id": 1, "nutrient_id": nutrient_id, "amount": value}
+                             for value in (first, second)]
+                    write_csv(path, ["fdc_id", "nutrient_id", "amount"], rows)
+                    self.assertEqual(0, usda.build_from_inputs([root], Path(temp) / "out.sqlite", "test"))
+
+    def test_identical_csv_nutrient_duplicates_remain_usable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = make_fdc_dir(Path(temp) / "source", fdc_id=1, description="Synthetic food")
+            with (root / "food_nutrient.csv").open("a") as fh:
+                fh.write("1,1003,2.7\n")
+            self.assertEqual(1, usda.build_from_inputs([root], Path(temp) / "out.sqlite", "test"))
+
+    def test_csv_declared_units_are_checked_without_inventing_conversions(self) -> None:
+        for protein_unit, count in (("G", 1), ("mg", 0), ("", 0)):
+            with self.subTest(unit=protein_unit), tempfile.TemporaryDirectory() as temp:
+                root = make_fdc_dir(Path(temp) / "source", fdc_id=1, description="Synthetic food")
+                write_csv(root / "nutrient.csv", ["id", "nutrient_nbr", "unit_name"], [
+                    {"id": 1003, "nutrient_nbr": 203, "unit_name": protein_unit},
+                    {"id": 1093, "nutrient_nbr": 307, "unit_name": "MG"},
+                ])
+                output = Path(temp) / "out.sqlite"
+                self.assertEqual(count, usda.build_from_inputs([root], output, "test"))
+                if count:
+                    with sqlite3.connect(output) as conn:
+                        micros = json.loads(conn.execute("SELECT micronutrients_json FROM foods").fetchone()[0])
+                        self.assertEqual({"amount": 5.0, "unit": "mg"}, micros["sodium"])
+
     def test_fixture_build_has_schema_manifest_and_matching_sha(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "fixture.sqlite"
