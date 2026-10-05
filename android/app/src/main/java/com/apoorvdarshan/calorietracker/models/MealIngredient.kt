@@ -14,7 +14,14 @@ data class MealIngredient(
     val imageFilename: String? = null,
     val additionalImageFilenames: List<String> = emptyList(),
     val emoji: String? = null,
-    val nutritionProvenance: com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance? = null
+    val nutritionProvenance: com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance? = null,
+    /**
+     * Per-ingredient source micronutrients for evidence-backed meals.
+     * Null means the ingredient has no component-level micronutrient snapshot, so callers must not
+     * infer a mixed-meal micronutrient total from it. An empty map is a known snapshot with no
+     * shared optional nutrient values.
+     */
+    val micronutrients: Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount>? = null
 ) {
     val allImageFilenames: List<String>
         get() = (listOfNotNull(imageFilename) + additionalImageFilenames).distinct()
@@ -37,7 +44,17 @@ data class MealIngredient(
             calories = scaledCalories.roundToInt(),
             protein = scaledDouble(protein, "protein"),
             carbs = scaledDouble(carbs, "carbohydrate"),
-            fat = scaledDouble(fat, "fat")
+            fat = scaledDouble(fat, "fat"),
+            micronutrients = micronutrients?.mapValues { (key, nutrient) ->
+                require(nutrient.amount.isFinite() && nutrient.amount >= 0.0) {
+                    "Invalid ingredient micronutrient $key"
+                }
+                val amount = nutrient.amount * factor
+                require(amount.isFinite() && amount >= 0.0) {
+                    "Unsafe ingredient micronutrient $key"
+                }
+                nutrient.copy(amount = amount)
+            }
         )
     }
 }
