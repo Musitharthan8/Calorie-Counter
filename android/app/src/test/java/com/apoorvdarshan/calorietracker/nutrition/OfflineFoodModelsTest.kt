@@ -162,6 +162,29 @@ class OfflineFoodModelsTest {
         assertTrue(guardedSource.search(mention).isEmpty())
     }
 
+    @Test fun filteringCannotHideTheTruncationSentinel() = runBlocking {
+        val requested = record(name = "Greek yoghurt", aliases = emptySet(), brand = "Brand A")
+        val records = listOf(
+            requested,
+            requested.copy(sourceFoodId = "other-brand", brand = "Brand B"),
+            record(name = "Unrelated discovery", aliases = emptySet()).copy(sourceFoodId = "sentinel"),
+            requested.copy(sourceFoodId = "hidden-variant")
+        )
+        val guardedSource = CanonicalOfflineNutritionSource(
+            sourceKind = NutritionSourceKind.USDA,
+            manifest = manifest.copy(recordCount = records.size),
+            index = OfflineFoodIndex { _, limit -> records.take(limit) },
+            searchLimit = 2
+        )
+        val mention = FoodMention(
+            id = "1", name = "Greek yoghurt", originalWording = "100 g Brand A Greek yoghurt",
+            quantity = FoodQuantity(100.0, "g"), brand = "Brand A"
+        )
+        assertTrue(guardedSource.search(mention).isEmpty())
+        assertFalse(NutritionResolver(listOf(guardedSource))
+            .resolve(MealInterpretation(mention.originalWording, listOf(mention))).complete)
+    }
+
     @Test fun explicitBrandMustMatchSourceBrand() = runBlocking {
         val branded = record(name = "Greek yoghurt", aliases = setOf("greek yoghurt"), brand = "Brand A")
         val mention = FoodMention(

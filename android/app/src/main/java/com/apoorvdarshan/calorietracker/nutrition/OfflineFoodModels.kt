@@ -127,8 +127,11 @@ class CanonicalOfflineNutritionSource(
     override suspend fun search(mention: FoodMention): List<NutritionCandidate> {
         val query = mention.name.trim()
         if (query.isEmpty()) return emptyList()
-        val matchingRecords = index.search(query, searchLimit + 1)
-            .asSequence()
+        val discoveredRecords = index.search(query, searchLimit + 1)
+        // Check the raw discovery count before applying name/brand gates. Filtering a full page
+        // could hide the sentinel and make one surviving match look like a complete candidate set.
+        if (discoveredRecords.size > searchLimit) return emptyList()
+        val matchingRecords = discoveredRecords.asSequence()
             .filter { it.source == sourceKind }
             .filter { record -> record.exactlyNames(mention.name) }
             .filter { record ->
@@ -136,10 +139,6 @@ class CanonicalOfflineNutritionSource(
             }
             .take(searchLimit + 1)
             .toList()
-
-        // Hitting the cap means there may be additional equally named foods hidden by the query
-        // limit. Never turn a truncated candidate set into false certainty.
-        if (matchingRecords.size > searchLimit) return emptyList()
 
         return matchingRecords.mapNotNull { record -> record.toCandidateFor(mention, manifest) }
     }
