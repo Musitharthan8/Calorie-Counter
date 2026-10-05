@@ -119,6 +119,18 @@ class MealIngredientTest {
     }
 
     @Test
+    fun oldIngredientJsonWithoutMicronutrientSnapshotStillDecodes() {
+        val format = Json { ignoreUnknownKeys = true }
+        val ingredient = format.decodeFromString<MealIngredient>(
+            """{"name":"Rice","grams":100.0,"calories":130,"protein":2.0,"carbs":28.0,"fat":0.3}"""
+        )
+
+        assertEquals("Rice", ingredient.name)
+        assertEquals(null, ingredient.micronutrients)
+        assertEquals(null, ingredient.nutritionProvenance)
+    }
+
+    @Test
     fun progressiveMealModeSurvivesFoodEntryRoundTrip() {
         val format = Json { ignoreUnknownKeys = true }
         val original = FoodEntry(
