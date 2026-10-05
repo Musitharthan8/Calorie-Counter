@@ -1,5 +1,7 @@
 package com.apoorvdarshan.calorietracker.services.ai
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,6 +47,23 @@ class ServingUnitRepairPolicyTest {
                 shouldRequestFallback = true
             )
         )
+    }
+
+    @Test
+    fun bestEffortRepairIgnoresOrdinaryFailureButNotCancellation() = runBlocking {
+        val ordinary = bestEffortServingUnitRepair<List<String>> {
+            error("provider failed")
+        }
+        assertTrue(ordinary == null)
+
+        try {
+            bestEffortServingUnitRepair<List<String>> {
+                throw CancellationException("user cancelled")
+            }
+            throw AssertionError("Expected cancellation")
+        } catch (_: CancellationException) {
+            // expected
+        }
     }
 
     @Test
