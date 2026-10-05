@@ -65,6 +65,37 @@ class MealIngredientTest {
     }
 
     @Test
+    fun ingredientScalingPreservesAndScalesMicronutrientEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            name = "Rice",
+            grams = 100.0,
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val doubled = ingredient.scaled(2.0)
+
+        assertEquals(200.0, doubled.grams, 0.0)
+        assertEquals(6.0, doubled.micronutrients!!.getValue("sodium").amount, 0.0)
+        assertEquals(provenance, doubled.nutritionProvenance)
+    }
+
+    @Test
     fun ingredientMathRejectsOverflowAndNonFiniteScaling() {
         val ingredient = MealIngredient("Food", 100.0, Int.MAX_VALUE, 10.0, 10.0, 10.0)
 
