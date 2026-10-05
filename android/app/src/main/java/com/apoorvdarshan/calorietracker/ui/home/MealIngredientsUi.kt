@@ -205,13 +205,21 @@ internal fun MealIngredientEditorDialog(
         val parsedProtein = number(protein) ?: return@let null
         val parsedCarbs = number(carbs) ?: return@let null
         val parsedFat = number(fat) ?: return@let null
-        target.ingredient.copy(
+        val evidenceAdjusted = if (target.ingredient.grams > 0.0) {
+            runCatching {
+                target.ingredient.scaled(parsedGrams / target.ingredient.grams)
+            }.getOrNull()
+        } else {
+            null
+        }
+        (evidenceAdjusted ?: target.ingredient.copy(micronutrients = null)).copy(
             name = validName,
             grams = parsedGrams,
             calories = parsedCalories.roundToInt(),
             protein = parsedProtein,
             carbs = parsedCarbs,
-            fat = parsedFat
+            fat = parsedFat,
+            nutritionProvenance = target.ingredient.nutritionProvenance?.copy(userEdited = true)
         )
     }
 
