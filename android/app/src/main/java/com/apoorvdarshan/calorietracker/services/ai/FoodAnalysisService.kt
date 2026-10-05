@@ -21,6 +21,15 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import com.apoorvdarshan.calorietracker.models.OpenRouterReasoningEffort
 
+internal suspend fun <T> bestEffortServingUnitRepair(block: suspend () -> T): T? =
+    try {
+        block()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
 internal fun multiPhotoAnalysisPrompt(
     progressiveMeal: Boolean,
     description: String? = null
@@ -655,18 +664,14 @@ class FoodAnalysisService(
         shouldRequestFallback: Boolean
     ): FoodAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
-        val options = try {
+        val options = bestEffortServingUnitRepair {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = analysis.servingSizeGrams,
                 imageBytes = imageBytes,
                 description = description
             )
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptyList()
-        }
+        }.orEmpty()
         if (options.isEmpty()) return analysis
         val selected = options.first()
         return analysis.copy(
@@ -683,18 +688,14 @@ class FoodAnalysisService(
     ): NutritionLabelAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
         val servingSizeGrams = analysis.servingSizeGrams ?: return analysis
-        val options = try {
+        val options = bestEffortServingUnitRepair {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = servingSizeGrams,
                 imageBytes = imageBytes,
                 description = null
             )
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            emptyList()
-        }
+        }.orEmpty()
         if (options.isEmpty()) return analysis
         return analysis.copy(servingUnitOptions = options)
     }
