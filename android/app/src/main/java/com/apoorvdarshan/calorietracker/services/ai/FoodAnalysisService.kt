@@ -655,14 +655,18 @@ class FoodAnalysisService(
         shouldRequestFallback: Boolean
     ): FoodAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
-        val options = runCatching {
+        val options = try {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = analysis.servingSizeGrams,
                 imageBytes = imageBytes,
                 description = description
             )
-        }.getOrDefault(emptyList())
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
         if (options.isEmpty()) return analysis
         val selected = options.first()
         return analysis.copy(
@@ -679,14 +683,18 @@ class FoodAnalysisService(
     ): NutritionLabelAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
         val servingSizeGrams = analysis.servingSizeGrams ?: return analysis
-        val options = runCatching {
+        val options = try {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = servingSizeGrams,
                 imageBytes = imageBytes,
                 description = null
             )
-        }.getOrDefault(emptyList())
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
         if (options.isEmpty()) return analysis
         return analysis.copy(servingUnitOptions = options)
     }
