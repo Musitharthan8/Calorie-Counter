@@ -259,19 +259,27 @@ fun FoodEntry.applyingIngredientChanges(displayedIngredients: List<MealIngredien
     val componentMicros = displayedIngredients.micronutrientTotalsOrNull()
     val previousGrams = ingredients.totals().grams
     val fallbackFactor = MealMicronutrientStretch.factor(previousGrams, totals.grams)
-    val base = if (componentMicros != null) {
-        withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
-    } else {
-        val stretched = MealMicronutrientSnapshot.from(this).stretched(previousGrams, totals.grams)
-        val stretchedSource = if (fallbackFactor == null) {
-            sourceNutrients
-        } else {
-            sourceNutrients.mapNotNull { (key, nutrient) ->
-                val amount = nutrient.amount * fallbackFactor
-                if (amount.isFinite() && amount >= 0.0) key to nutrient.copy(amount = amount) else null
-            }.toMap()
+    val base = when {
+        componentMicros != null -> {
+            withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
         }
-        withMicros(stretched).copy(sourceNutrients = stretchedSource)
+        ingredients.any { it.micronutrients != null } -> {
+            // Component evidence existed but the new ingredient set can no longer support a full
+            // micronutrient total. Unknown is safer than stretching stale source evidence.
+            withMicros(MealMicronutrientSnapshot()).copy(sourceNutrients = emptyMap())
+        }
+        else -> {
+            val stretched = MealMicronutrientSnapshot.from(this).stretched(previousGrams, totals.grams)
+            val stretchedSource = if (fallbackFactor == null) {
+                sourceNutrients
+            } else {
+                sourceNutrients.mapNotNull { (key, nutrient) ->
+                    val amount = nutrient.amount * fallbackFactor
+                    if (amount.isFinite() && amount >= 0.0) key to nutrient.copy(amount = amount) else null
+                }.toMap()
+            }
+            withMicros(stretched).copy(sourceNutrients = stretchedSource)
+        }
     }
     return base.copy(
         calories = totals.calories,
