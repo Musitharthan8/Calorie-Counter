@@ -102,6 +102,46 @@ data class MealMicronutrientSnapshot(
     }
 }
 
+fun MealMicronutrientSnapshot.toNutrientMap(
+    sourceNutrients: Map<String, NutrientAmount> = emptyMap()
+): Map<String, NutrientAmount> = buildMap {
+    fun add(key: String, value: Double?, unit: String) {
+        value?.takeIf { it.isFinite() && it >= 0.0 }?.let {
+            put(key, NutrientAmount(it, unit))
+        }
+    }
+
+    add("sugar", sugar, "g")
+    add("addedSugar", addedSugar, "g")
+    add("fiber", fiber, "g")
+    add("saturatedFat", saturatedFat, "g")
+    add("monounsaturatedFat", monounsaturatedFat, "g")
+    add("polyunsaturatedFat", polyunsaturatedFat, "g")
+    add("cholesterol", cholesterol, "mg")
+    add("caffeine", caffeine, "mg")
+    supplementalNutrients.forEach { (key, value) -> add(key, value, "g") }
+    add("sodium", sodium, "mg")
+    add("potassium", potassium, "mg")
+    add("transFat", transFat, "g")
+    add("calcium", calcium, "mg")
+    add("iron", iron, "mg")
+    add("magnesium", magnesium, "mg")
+    add("zinc", zinc, "mg")
+    add("vitaminA", vitaminA, "ug")
+    add("vitaminC", vitaminC, "mg")
+    add("vitaminD", vitaminD, "ug")
+    add("vitaminB12", vitaminB12, "ug")
+    add("vitaminE", vitaminE, "mg")
+    add("vitaminK", vitaminK, "ug")
+    add("folate", folate, "ug")
+    add("omega3", omega3, "g")
+    sourceNutrients.forEach { (key, nutrient) ->
+        if (key !in this && nutrient.amount.isFinite() && nutrient.amount >= 0.0) {
+            put(key, nutrient)
+        }
+    }
+}
+
 data class IngredientMicronutrientTotals(
     val snapshot: MealMicronutrientSnapshot,
     val sourceNutrients: Map<String, NutrientAmount>
