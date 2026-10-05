@@ -135,7 +135,9 @@ It covers:
 - exclusion of branded rows;
 - conservative alias generation;
 - FNDDS portion descriptions such as `1 fl oz` when measureUnit is undetermined;
-- duplicate FDC IDs across input archives;
+- duplicate FDC IDs within CSV inputs and across JSON/CSV inputs;
+- fractional/mixed-number portion amounts and primary-unit precedence;
+- invalid explicit amounts are rejected instead of becoming one-unit portions;
 - unknown portion wording.
 
 The repository's `Quality checks` workflow includes this suite in a separate
