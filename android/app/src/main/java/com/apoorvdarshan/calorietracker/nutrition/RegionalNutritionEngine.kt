@@ -122,9 +122,16 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
 
     // Existing ingredient editing requires real mass; retain per-food provenance even without it.
     val ingredients = if (allGramsKnown) matches.map { match ->
-        MealIngredient(match.candidate.canonicalName, match.grams!!, match.nutrition.calories.roundToInt(),
-            match.nutrition.protein, match.nutrition.carbs, match.nutrition.fat,
-            nutritionProvenance = match.provenance)
+        MealIngredient(
+            name = match.candidate.canonicalName,
+            grams = match.grams!!,
+            calories = match.nutrition.calories.roundToInt(),
+            protein = match.nutrition.protein,
+            carbs = match.nutrition.carbs,
+            fat = match.nutrition.fat,
+            nutritionProvenance = match.provenance,
+            micronutrients = match.nutrition.micronutrients
+        )
     } else emptyList()
     val commonMicronutrients: Map<String, NutrientAmount> = if (matches.isEmpty()) {
         emptyMap()
