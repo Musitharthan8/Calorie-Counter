@@ -138,6 +138,10 @@ class RegionalNutritionEngineTest {
         assertEquals(NutrientAmount(95.0, "mg"), analysis.sourceNutrients["phosphorus"])
         assertEquals(NutrientAmount(0.2, "mg"), analysis.sourceNutrients["vitaminB6"])
         assertEquals(NutrientAmount(0.7, "mg"), analysis.sourceNutrients["niacin"])
+        val ingredientMicros = analysis.ingredients.single().micronutrients
+        assertNotNull(ingredientMicros)
+        assertEquals(NutrientAmount(36.0, "mg"), ingredientMicros!!["magnesium"])
+        assertEquals(NutrientAmount(95.0, "mg"), ingredientMicros["phosphorus"])
 
         val restored = Json.decodeFromString<FoodAnalysis>(Json.encodeToString(analysis))
         assertEquals(analysis.sourceNutrients, restored.sourceNutrients)
