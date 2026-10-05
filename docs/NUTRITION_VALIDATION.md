@@ -120,3 +120,45 @@ The latest successfully executed importer validation remains:
 
 Do not interpret this section as an Android pass. PR #1 must remain draft until Android compile,
 unit tests and lint execute successfully.
+
+
+## Cancellation and component-edit follow-up, 5 October 2026
+
+Current head at this checkpoint: `525045b664d74fb1b7ee91999873d3c14feecae9`.
+
+A cancellation audit found that optional serving-unit repair used `runCatching` around a suspend AI
+call. Because `runCatching` catches `CancellationException`, canceling during that repair could be
+converted into an empty repair result and allow the surrounding food/label analysis to continue.
+
+The branch now:
+- uses a cancellation-aware `bestEffortServingUnitRepair` helper;
+- rethrows `CancellationException`;
+- still treats ordinary repair/provider failures as optional and continues without repaired units;
+- preserves cancellation through the shared `RegionalNutritionEngine.analyzeInterpretation`
+  fallback path;
+- keeps the existing resolver and Open Food Facts cancellation rethrow behavior.
+
+New unexecuted Kotlin regressions cover ordinary repair failure versus cancellation and cancellation
+from the shared unresolved-input fallback.
+
+The component evidence audit also tightened manual ingredient edits:
+- pure proportional serving edits may scale and retain component source evidence while marking it
+  `userEdited`;
+- food-name or manual macro changes invalidate component micronutrient/provenance evidence;
+- once grounded component evidence becomes incomplete, stale parent micronutrients are cleared
+  rather than falling back to legacy whole-meal stretching;
+- the Review source-nutrient row now renders from the current editable map, not the original
+  analysis map.
+
+A wider sweep confirmed `NutritionResolver` and Open Food Facts explicitly rethrow coroutine
+cancellation. Remaining `runCatching` uses in the inspected offline paths are synchronous JSON,
+file-close, or asset-probe operations rather than suspend-call cancellation boundaries.
+
+Validation status is unchanged:
+- the last executed importer suite remains **28 passing tests**;
+- these newer Kotlin tests have not run;
+- Android compilation/unit/lint remain blocked before Gradle task execution;
+- GitHub still reports zero workflow runs and the connector still has no initial workflow
+  enable/dispatch operation.
+
+PR #1 must remain draft.
