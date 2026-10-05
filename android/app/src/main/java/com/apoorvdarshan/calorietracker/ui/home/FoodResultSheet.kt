@@ -76,6 +76,7 @@ import com.apoorvdarshan.calorietracker.models.ServingUnitOption
 import com.apoorvdarshan.calorietracker.models.ServingAmountExpression
 import com.apoorvdarshan.calorietracker.models.SupplementalNutrient
 import com.apoorvdarshan.calorietracker.models.totals
+import com.apoorvdarshan.calorietracker.models.micronutrientTotalsOrNull
 import com.apoorvdarshan.calorietracker.models.UserProfile
 import com.apoorvdarshan.calorietracker.models.allergenAnalysis
 import com.apoorvdarshan.calorietracker.services.ai.FoodAnalysis
@@ -302,49 +303,59 @@ fun FoodResultSheet(
         editableOmega3 = snapshot.omega3
     }
     fun applyIngredientChanges(displayedIngredients: List<MealIngredient>) {
-        val previousIngredientGrams = editableIngredients.totals().grams
-        val nextIngredientGrams = displayedIngredients.totals().grams
-        if (previousIngredientGrams > 0 && nextIngredientGrams > 0) {
-            val factor = nextIngredientGrams / previousIngredientGrams
-            if (factor.isFinite() && factor > 0) {
-                editableSourceNutrients = editableSourceNutrients.mapNotNull { (key, nutrient) ->
-                    val amount = nutrient.amount * factor
-                    if (amount.isFinite() && amount >= 0) {
-                        key to nutrient.copy(amount = amount)
-                    } else {
-                        null
-                    }
-                }.toMap()
+        val componentMicros = displayedIngredients.micronutrientTotalsOrNull()
+        if (componentMicros != null) {
+            // Evidence-backed mixed meals can be recomputed from their edited components. Never
+            // stretch the old whole-meal micronutrients by total mass when proportions changed.
+            applyMicronutrients(componentMicros.snapshot)
+            editableSourceNutrients = componentMicros.sourceNutrients
+        } else {
+            // Legacy AI/manual meals may only have meal-level micros. Keep the old proportional
+            // fallback for those records rather than inventing component-level evidence.
+            val previousIngredientGrams = editableIngredients.totals().grams
+            val nextIngredientGrams = displayedIngredients.totals().grams
+            if (previousIngredientGrams > 0 && nextIngredientGrams >= 0) {
+                val factor = nextIngredientGrams / previousIngredientGrams
+                if (factor.isFinite() && factor >= 0) {
+                    editableSourceNutrients = editableSourceNutrients.mapNotNull { (key, nutrient) ->
+                        val amount = nutrient.amount * factor
+                        if (amount.isFinite() && amount >= 0) {
+                            key to nutrient.copy(amount = amount)
+                        } else {
+                            null
+                        }
+                    }.toMap()
+                }
             }
+            applyMicronutrients(
+                MealMicronutrientSnapshot(
+                    sugar = editableSugar,
+                    addedSugar = editableAddedSugar,
+                    fiber = editableFiber,
+                    saturatedFat = editableSaturatedFat,
+                    monounsaturatedFat = editableMonounsaturatedFat,
+                    polyunsaturatedFat = editablePolyunsaturatedFat,
+                    cholesterol = editableCholesterol,
+                    caffeine = editableCaffeine,
+                    supplementalNutrients = editableSupplementalNutrients,
+                    sodium = editableSodium,
+                    potassium = editablePotassium,
+                    transFat = editableTransFat,
+                    calcium = editableCalcium,
+                    iron = editableIron,
+                    magnesium = editableMagnesium,
+                    zinc = editableZinc,
+                    vitaminA = editableVitaminA,
+                    vitaminC = editableVitaminC,
+                    vitaminD = editableVitaminD,
+                    vitaminB12 = editableVitaminB12,
+                    vitaminE = editableVitaminE,
+                    vitaminK = editableVitaminK,
+                    folate = editableFolate,
+                    omega3 = editableOmega3
+                ).stretched(previousIngredientGrams, nextIngredientGrams)
+            )
         }
-        applyMicronutrients(
-            MealMicronutrientSnapshot(
-                sugar = editableSugar,
-                addedSugar = editableAddedSugar,
-                fiber = editableFiber,
-                saturatedFat = editableSaturatedFat,
-                monounsaturatedFat = editableMonounsaturatedFat,
-                polyunsaturatedFat = editablePolyunsaturatedFat,
-                cholesterol = editableCholesterol,
-                caffeine = editableCaffeine,
-                supplementalNutrients = editableSupplementalNutrients,
-                sodium = editableSodium,
-                potassium = editablePotassium,
-                transFat = editableTransFat,
-                calcium = editableCalcium,
-                iron = editableIron,
-                magnesium = editableMagnesium,
-                zinc = editableZinc,
-                vitaminA = editableVitaminA,
-                vitaminC = editableVitaminC,
-                vitaminD = editableVitaminD,
-                vitaminB12 = editableVitaminB12,
-                vitaminE = editableVitaminE,
-                vitaminK = editableVitaminK,
-                folate = editableFolate,
-                omega3 = editableOmega3
-            ).stretched(editableIngredients.totals().grams, displayedIngredients.totals().grams)
-        )
         editableIngredients = displayedIngredients
         val totals = displayedIngredients.totals()
         editableCalories = totals.calories
