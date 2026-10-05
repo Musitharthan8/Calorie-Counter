@@ -169,6 +169,46 @@ class MealMicronutrientStretchTest {
     }
 
     @Test
+    fun invalidatedComponentEvidenceClearsParentMicronutrientsInsteadOfStretchingThem() {
+        val rice = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+        val chicken = MealIngredient(
+            "Chicken", 100.0, 165, 31.0, 0.0, 3.6,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(70.0, "mg")
+            )
+        )
+        val entry = FoodEntry(
+            name = "Grounded meal",
+            calories = 295,
+            protein = 33.0,
+            carbs = 28.0,
+            fat = 3.9,
+            source = FoodSource.TEXT_INPUT,
+            sodium = 73.0,
+            servingSizeGrams = 200.0,
+            ingredients = listOf(rice, chicken)
+        )
+        val manuallyChangedChicken = chicken.withUserEdits(
+            name = "Tofu",
+            grams = 100.0,
+            calories = 165,
+            protein = 31.0,
+            carbs = 0.0,
+            fat = 3.6
+        )
+
+        val updated = entry.applyingIngredientChanges(listOf(rice, manuallyChangedChicken))
+
+        assertNull(updated.sodium)
+        assertTrue(updated.sourceNutrients.isEmpty())
+    }
+
+    @Test
     fun applyingIngredientChangesRewritesBaseMicrosByIngredientGramsRatio() {
         val rice = MealIngredient("Rice", 150.0, 195, 4.0, 42.0, 0.5)
         val chicken = MealIngredient("Chicken", 100.0, 165, 31.0, 0.0, 3.6)
