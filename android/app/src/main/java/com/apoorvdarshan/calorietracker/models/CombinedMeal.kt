@@ -72,10 +72,15 @@ fun FoodAnalysis.toMealIngredient(): MealIngredient {
 fun FoodEntry.withIngredients(ingredients: List<MealIngredient>): FoodEntry {
     val totals = ingredients.totals()
     val componentMicros = ingredients.micronutrientTotalsOrNull()
-    val withComponentMicros = if (componentMicros != null) {
-        withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
-    } else {
-        copy()
+    val withComponentMicros = when {
+        componentMicros != null -> {
+            withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
+        }
+        this.ingredients.any { it.micronutrients != null } ||
+            ingredients.any { it.micronutrients != null } -> {
+            withMicros(MealMicronutrientSnapshot()).copy(sourceNutrients = emptyMap())
+        }
+        else -> copy()
     }
     return withComponentMicros.copy(
         calories = totals.calories,
