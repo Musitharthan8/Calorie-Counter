@@ -263,3 +263,88 @@ remain unvalidated.
 
 The latest actually executed validation remains the earlier importer checkpoint: **28 Python tests
 passed**. PR #1 remains draft.
+
+## Executed Android audit gate, 6 October 2026
+
+This checkpoint supersedes the unexecuted Android status above. GitHub PR #1 and a direct remote
+branch check both identified `b2229af542bce44b47c2d13aafe1a7595b4526eb` as the live starting head,
+12 commits beyond `e97e8a28bcfe175eb8ca50401f05f3a47d4022d1`. All 12 commits were audited through
+their production, test and documentation diffs. The landed rounding changes in `3e61b4c`,
+`102a391` and `3eef0d4` were not reapplied or modified.
+
+The continuation fix is `343cc7c1e816133949689709d52faeab24fd5f8e`:
+
+- JSON item/component nutrition and weights now retain stored precision. Display rounding had
+  changed 0.75 g fat to 0.8 g and could erase a 0.04 g component weight while retaining its exact
+  micronutrient evidence. Three export/import cycles now preserve the tested values exactly.
+- Date-range replacement clears stale serving controls, interpretation and product metadata absent
+  from diary JSON. Imported nutrition/evidence and existing local parent media remain preserved.
+- Invalid source/component `NutrientAmount` constructor inputs now produce `DiaryImportException`,
+  matching malformed JSON, rather than leaking a generic `IllegalArgumentException`.
+- Resolution and component aggregation retain source nutrients whose units cannot populate a
+  legacy typed field. Such nutrients stay in `sourceNutrients` with their authored units; no hidden
+  conversion or incompatible unit mapping is introduced.
+
+Five added tests reproduced these defects before production fixes. The targeted pre-fix run had
+39 tests and six failures: five new regressions plus an existing invalid legacy source fixture.
+All three landed `MealIngredientEvidenceTest` rounding/identity cases passed unchanged.
+
+Actual execution also uncovered and repaired validation problems:
+
+- Four photo-test lambdas returned JUnit `fail`'s `Unit` where typed results were required. They now
+  throw `AssertionError` and the test source compiles.
+- The old-entry serialization fixture now uses the existing persisted `textInput` source value,
+  instead of the unsupported `text` value. FoodSource's production contract was not changed.
+- Local parser tests use test-only `org.json:json:20260814`, since the SDK's JSONObject stubs throw
+  in JVM tests. No JSON library was added to the application runtime.
+- Importer tests explicitly close SQLite read connections, fixing Windows fixture cleanup errors.
+
+### Commands and measured results
+
+Executed on Windows with portable Temurin Java 17.0.20, the repository Gradle 9.8.0 wrapper,
+Android platform 37.2 and required build tools. Tooling/caches remain outside the repository under
+the task workspace. A sparse checkout included the workout manifest and the eight real squat images
+needed by the existing corpus test; no workout test was skipped or weakened.
+
+```powershell
+.\android\gradlew.bat -p android :app:compileDebugKotlin :app:testDebugUnitTest :app:lintRelease -PworkoutVectors=none
+python -m unittest -v scripts/test_build_usda_food_index.py scripts/test_build_indb_food_index.py
+git diff --check
+```
+
+Results:
+
+- Android command: **BUILD SUCCESSFUL**. Debug and release Kotlin/Java compilation completed during
+  the validation runs; unchanged compile tasks were up-to-date in the final run.
+- Android JVM suite: **422 tests, 76 classes, zero failures, errors or skips**.
+- Release lint: **zero errors/fatal findings**, **597 warnings and 20 hints**. Warnings were not
+  suppressed or baselined to obtain this result. Gradle/Kotlin deprecation warnings remain.
+- USDA/INDB synthetic importer suite: **28 tests passed**.
+- Whitespace check: passed.
+
+Initial attempts failed because Java/SDK were absent, then exposed test compilation, JSON stub and
+Windows SQLite cleanup problems. Those blockers were resolved. The intermediate full Android run
+had five failures (four JSON-stub failures and one missing sparse-checkout image fixture); all were
+resolved before the final passing gate.
+
+No emulator/device instrumentation, APK assembly/signing, production dataset matching, or real
+SG FoodID/MyFCD/INDB redistribution validation is claimed. GitHub reported zero Actions runs at
+the starting checkpoint; local passing execution is not a green GitHub Actions run. PR #1 remains
+draft pending remote CI and review.
+
+The architecture and source hierarchy remain:
+
+`MealInterpretation -> ambiguity -> NutritionResolver -> deterministic scaling -> provenance -> review`
+
+`Personal -> SG FoodID -> MyFCD -> INDB/IFCT -> official brand -> OFF -> USDA -> AI last`
+
+### Next priorities
+
+1. Obtain a remote Quality checks run for this branch before merge.
+2. Exercise review/edit and JSON replacement flows on an Android device/emulator; extend diary
+   interchange to preserve serving/product/interpretation metadata explicitly if that fidelity is needed.
+3. Build and inspect a real USDA Foundation/FNDDS data pack; synthetic importer tests do not establish
+   production matching quality or coverage.
+4. Verify first-party redistribution rights before bundling SG FoodID, MyFCD or INDB.
+5. Triage lint warnings and compiler/Gradle deprecations, then continue clarification/photo UX and
+   safe composite-meal modelling without weakening ambiguity or evidence guards.
