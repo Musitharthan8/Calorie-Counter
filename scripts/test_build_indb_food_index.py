@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from pathlib import Path
@@ -137,7 +138,7 @@ class IndbImporterTest(unittest.TestCase):
             )
             self.assertEqual(1, count)
 
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 food = conn.execute(
                     """
                     SELECT source_food_id, canonical_name, calories, protein, carbs, fat,
@@ -207,7 +208,7 @@ class IndbImporterTest(unittest.TestCase):
                 "Test attribution",
             )
             self.assertEqual(0, count)
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0])
 
     def test_out_of_range_ratio_cannot_be_ignored(self) -> None:
@@ -236,7 +237,7 @@ class IndbImporterTest(unittest.TestCase):
                 values[HEADERS.index("vitd2_ug")] = missing
                 write_workbook(root / "input.xlsx", [values])
                 indb.build(root / "input.xlsx", root / "index.sqlite", "test", "TEST LICENCE", "Test")
-                with sqlite3.connect(root / "index.sqlite") as conn:
+                with closing(sqlite3.connect(root / "index.sqlite")) as conn:
                     micros = json.loads(conn.execute("SELECT micronutrients_json FROM foods").fetchone()[0])
                 self.assertNotIn("vitaminD", micros)
                 self.assertIn("freeSugar", micros)

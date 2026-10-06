@@ -19,6 +19,36 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 class DiaryExporterTest {
+    @Test
+    fun jsonRoundTripsExactNutritionAndSmallComponentWeights() {
+        val ingredient = MealIngredient(
+            "Spice", 0.04, 1, 0.014, 0.027, 0.003,
+            micronutrients = mapOf("sodium" to NutrientAmount(0.1234, "mg"))
+        )
+        val original = nutrientEntry().copy(
+            protein = 4.44444,
+            fat = 0.75,
+            sugar = 0.014,
+            vitaminB12 = 0.0234,
+            servingSizeGrams = 100.12345,
+            supplementalNutrients = mapOf("creatine" to 0.03456),
+            ingredients = listOf(ingredient)
+        )
+        val date = original.timestamp.atZone(ZoneId.systemDefault()).toLocalDate()
+        var restored = original
+        repeat(3) {
+            restored = DiaryImporter.parse(requireNotNull(build(restored, date, DiaryFormat.JSON)).second)
+                .entries.single()
+        }
+        assertEquals(original.protein, restored.protein, 0.0)
+        assertEquals(original.fat, restored.fat, 0.0)
+        assertEquals(original.sugar, restored.sugar)
+        assertEquals(original.vitaminB12, restored.vitaminB12)
+        assertEquals(original.servingSizeGrams, restored.servingSizeGrams)
+        assertEquals(original.supplementalNutrients, restored.supplementalNutrients)
+        assertEquals(original.ingredients, restored.ingredients)
+    }
+
     @Test fun waterOnlyDaysRoundTripAndExportWithoutCalories() {
         val day = LocalDate.of(2026, 9, 1)
         val water = com.apoorvdarshan.calorietracker.models.WaterEntry(

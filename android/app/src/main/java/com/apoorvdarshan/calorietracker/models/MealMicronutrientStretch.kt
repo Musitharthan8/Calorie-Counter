@@ -183,46 +183,41 @@ fun List<MealIngredient>.micronutrientTotalsOrNull(): IngredientMicronutrientTot
     fun amount(key: String, unit: String): Double? =
         totals[key]?.takeIf { it.unit == unit }?.amount
 
-    val supplementalKeys = SupplementalNutrient.values().map { it.storageKey }.toSet()
     val supplemental = SupplementalNutrient.values().mapNotNull { nutrient ->
         amount(nutrient.storageKey, "g")?.let { nutrient.storageKey to it }
     }.toMap()
-    val legacyKeys = setOf(
-        "sugar", "addedSugar", "fiber", "saturatedFat", "monounsaturatedFat",
-        "polyunsaturatedFat", "cholesterol", "caffeine", "sodium", "potassium",
-        "transFat", "calcium", "iron", "magnesium", "zinc", "vitaminA",
-        "vitaminC", "vitaminD", "vitaminB12", "vitaminE", "vitaminK",
-        "folate", "omega3"
+    val snapshot = MealMicronutrientSnapshot(
+        sugar = amount("sugar", "g"),
+        addedSugar = amount("addedSugar", "g"),
+        fiber = amount("fiber", "g"),
+        saturatedFat = amount("saturatedFat", "g"),
+        monounsaturatedFat = amount("monounsaturatedFat", "g"),
+        polyunsaturatedFat = amount("polyunsaturatedFat", "g"),
+        cholesterol = amount("cholesterol", "mg"),
+        caffeine = amount("caffeine", "mg"),
+        supplementalNutrients = supplemental,
+        sodium = amount("sodium", "mg"),
+        potassium = amount("potassium", "mg"),
+        transFat = amount("transFat", "g"),
+        calcium = amount("calcium", "mg"),
+        iron = amount("iron", "mg"),
+        magnesium = amount("magnesium", "mg"),
+        zinc = amount("zinc", "mg"),
+        vitaminA = amount("vitaminA", "ug"),
+        vitaminC = amount("vitaminC", "mg"),
+        vitaminD = amount("vitaminD", "ug"),
+        vitaminB12 = amount("vitaminB12", "ug"),
+        vitaminE = amount("vitaminE", "mg"),
+        vitaminK = amount("vitaminK", "ug"),
+        folate = amount("folate", "ug"),
+        omega3 = amount("omega3", "g")
     )
-
+    // A known key with another source unit still needs the unit-aware map. Remove only
+    // nutrients actually represented by a compatible typed field, not every known name.
+    val representedKeys = snapshot.toNutrientMap().keys
     return IngredientMicronutrientTotals(
-        snapshot = MealMicronutrientSnapshot(
-            sugar = amount("sugar", "g"),
-            addedSugar = amount("addedSugar", "g"),
-            fiber = amount("fiber", "g"),
-            saturatedFat = amount("saturatedFat", "g"),
-            monounsaturatedFat = amount("monounsaturatedFat", "g"),
-            polyunsaturatedFat = amount("polyunsaturatedFat", "g"),
-            cholesterol = amount("cholesterol", "mg"),
-            caffeine = amount("caffeine", "mg"),
-            supplementalNutrients = supplemental,
-            sodium = amount("sodium", "mg"),
-            potassium = amount("potassium", "mg"),
-            transFat = amount("transFat", "g"),
-            calcium = amount("calcium", "mg"),
-            iron = amount("iron", "mg"),
-            magnesium = amount("magnesium", "mg"),
-            zinc = amount("zinc", "mg"),
-            vitaminA = amount("vitaminA", "ug"),
-            vitaminC = amount("vitaminC", "mg"),
-            vitaminD = amount("vitaminD", "ug"),
-            vitaminB12 = amount("vitaminB12", "ug"),
-            vitaminE = amount("vitaminE", "mg"),
-            vitaminK = amount("vitaminK", "ug"),
-            folate = amount("folate", "ug"),
-            omega3 = amount("omega3", "g")
-        ),
-        sourceNutrients = totals.filterKeys { it !in legacyKeys && it !in supplementalKeys }
+        snapshot = snapshot,
+        sourceNutrients = totals.filterKeys { it !in representedKeys }
     )
 }
 

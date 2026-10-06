@@ -102,11 +102,11 @@ class AiPhotoMealInterpreterTest {
             )
         )
         val engine = RegionalNutritionEngine(
-            interpreter = MealInterpreter { fail("Text interpreter is not used for photo resolution") },
+            interpreter = MealInterpreter { throw AssertionError("Text interpreter is not used for photo resolution") },
             resolver = NutritionResolver(
                 listOf(InMemoryNutritionSource(listOf(candidate)))
             ),
-            estimate = { fail("Text estimate is not used for grounded photo resolution") }
+            estimate = { throw AssertionError("Text estimate is not used for grounded photo resolution") }
         )
 
         val result = engine.analyzeInterpretation(
@@ -136,9 +136,9 @@ class AiPhotoMealInterpreterTest {
             )
         )
         val engine = RegionalNutritionEngine(
-            interpreter = MealInterpreter { fail("unused") },
+            interpreter = MealInterpreter { throw AssertionError("unused") },
             resolver = NutritionResolver(emptyList()),
-            estimate = { fail("unused") }
+            estimate = { throw AssertionError("unused") }
         )
 
         val result = engine.analyzeInterpretation(

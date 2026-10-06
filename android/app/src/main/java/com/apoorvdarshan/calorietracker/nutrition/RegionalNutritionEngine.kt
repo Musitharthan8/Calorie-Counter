@@ -152,13 +152,14 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
     fun nutrient(key: String, unit: String): Double? =
         commonMicronutrients[key]?.takeIf { it.unit == unit }?.amount
 
-    val legacyMicronutrientKeys = setOf(
-        "sugar", "addedSugar", "fiber", "saturatedFat", "monounsaturatedFat",
-        "polyunsaturatedFat", "cholesterol", "caffeine", "sodium", "potassium",
-        "transFat", "calcium", "iron", "magnesium", "zinc", "vitaminA",
-        "vitaminC", "vitaminD", "vitaminB12", "vitaminE", "vitaminK",
-        "folate", "omega3"
-    )
+    val legacyMicronutrientUnits = buildMap {
+        listOf("sugar", "addedSugar", "fiber", "saturatedFat", "monounsaturatedFat",
+            "polyunsaturatedFat", "transFat", "omega3").forEach { put(it, "g") }
+        listOf("cholesterol", "caffeine", "sodium", "potassium", "calcium", "iron",
+            "magnesium", "zinc", "vitaminC", "vitaminE").forEach { put(it, "mg") }
+        listOf("vitaminA", "vitaminD", "vitaminB12", "vitaminK", "folate")
+            .forEach { put(it, "ug") }
+    }
     return FoodAnalysis(
         name = matches.joinToString(", ") { it.candidate.canonicalName },
         calories = totalCalories,
@@ -175,7 +176,9 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
         polyunsaturatedFat = nutrient("polyunsaturatedFat", "g"),
         cholesterol = nutrient("cholesterol", "mg"),
         caffeine = nutrient("caffeine", "mg"),
-        sourceNutrients = commonMicronutrients.filterKeys { it !in legacyMicronutrientKeys },
+        sourceNutrients = commonMicronutrients.filter { (key, value) ->
+            legacyMicronutrientUnits[key] != value.unit
+        },
         sodium = nutrient("sodium", "mg"),
         potassium = nutrient("potassium", "mg"),
         transFat = nutrient("transFat", "g"),

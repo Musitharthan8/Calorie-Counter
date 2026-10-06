@@ -12,6 +12,7 @@ import hashlib
 import importlib.util
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 import zipfile
@@ -231,7 +232,7 @@ class UsdaImporterTest(unittest.TestCase):
                 output = Path(temp) / "out.sqlite"
                 self.assertEqual(count, usda.build_from_inputs([root], output, "test"))
                 if count:
-                    with sqlite3.connect(output) as conn:
+                    with closing(sqlite3.connect(output)) as conn:
                         micros = json.loads(conn.execute("SELECT micronutrients_json FROM foods").fetchone()[0])
                         self.assertEqual({"amount": 5.0, "unit": "mg"}, micros["sodium"])
 
@@ -242,7 +243,7 @@ class UsdaImporterTest(unittest.TestCase):
             self.assertEqual(2, count)
             self.assertTrue(output.is_file())
 
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 self.assertEqual(2, conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0])
                 self.assertEqual(2, conn.execute("SELECT COUNT(*) FROM portions").fetchone()[0])
                 row = conn.execute(
@@ -271,7 +272,7 @@ class UsdaImporterTest(unittest.TestCase):
             count = usda.build_from_csv_roots([root], output, "test-release")
             self.assertEqual(1, count)
 
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 row = conn.execute(
                     "SELECT calories, protein, carbs, fat, micronutrients_json FROM foods"
                 ).fetchone()
@@ -313,7 +314,7 @@ class UsdaImporterTest(unittest.TestCase):
             output = Path(temp) / "usda.sqlite"
             count = usda.build_from_csv_roots([root], output, "test-release")
             self.assertEqual(0, count)
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM foods").fetchone()[0])
 
     def test_multiple_archives_merge_without_branded_rows(self) -> None:
@@ -344,7 +345,7 @@ class UsdaImporterTest(unittest.TestCase):
                 "foundation-test+fndds-test",
             )
             self.assertEqual(2, count)
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 names = [row[0] for row in conn.execute(
                     "SELECT canonical_name FROM foods ORDER BY source_food_id"
                 )]
@@ -407,7 +408,7 @@ class UsdaImporterTest(unittest.TestCase):
             )
             self.assertEqual(2, count)
 
-            with sqlite3.connect(output) as conn:
+            with closing(sqlite3.connect(output)) as conn:
                 hummus = conn.execute(
                     """
                     SELECT calories, protein, carbs, fat, micronutrients_json

@@ -9,7 +9,6 @@ import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
 import com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -118,7 +117,7 @@ object DiaryImporter {
     fun parse(content: String): DiaryImportPreview {
         val document = try {
             json.decodeFromString(Document.serializer(), content)
-        } catch (_: SerializationException) {
+        } catch (_: IllegalArgumentException) {
             throw DiaryImportException("This is not a valid Fud AI food diary JSON file.")
         }
         if (!document.metadata.app.equals("Fud AI", ignoreCase = true)) {
@@ -311,6 +310,13 @@ object DiaryImporter {
         folate = imported.folate,
         omega3 = imported.omega3,
         servingSizeGrams = imported.servingSizeGrams,
+        // These food/portion-specific fields are absent from diary JSON. Old values cannot
+        // describe the imported nutrition safely, even when the matched entry retains its media.
+        servingUnitOptions = imported.servingUnitOptions,
+        selectedServingUnit = imported.selectedServingUnit,
+        selectedServingQuantity = imported.selectedServingQuantity,
+        mealInterpretation = imported.mealInterpretation,
+        productMetadata = imported.productMetadata,
         customNote = imported.customNote,
         ingredients = imported.ingredients,
         nutritionProvenance = imported.nutritionProvenance,

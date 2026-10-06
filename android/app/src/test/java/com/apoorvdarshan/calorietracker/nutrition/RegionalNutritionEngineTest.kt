@@ -12,6 +12,28 @@ import org.junit.Test
 import java.time.Instant
 
 class RegionalNutritionEngineTest {
+    @Test fun sourceUnitsWithoutCompatibleLegacyFieldsSurviveResolution() = runBlocking {
+        val micros = mapOf(
+            "sodium" to NutrientAmount(0.003, "g"),
+            "vitaminA" to NutrientAmount(0.1, "mg")
+        )
+        val candidate = NutritionCandidate(
+            canonicalName = "dal", source = NutritionSourceKind.INDB, sourceName = "Fixture",
+            evidence = NutritionEvidence.DATABASE,
+            nutrition = NutrientValues(120.0, 7.0, 18.0, 3.0, micros),
+            referenceQuantity = FoodQuantity(100.0, "g"), referenceGrams = 100.0
+        )
+        val meal = MealInterpretation("100 g dal", listOf(
+            FoodMention("1", "dal", "100 g dal", FoodQuantity(100.0, "g"))
+        ))
+        val analysis = NutritionResolver(listOf(InMemoryNutritionSource(listOf(candidate))))
+            .resolve(meal).toFoodAnalysis()
+        assertNull(analysis.sodium)
+        assertNull(analysis.vitaminA)
+        assertEquals(micros, analysis.sourceNutrients)
+        assertEquals(micros, analysis.ingredients.single().micronutrients)
+    }
+
     private fun estimate() = FoodAnalysis("banana", 105, 1.0, 27.0, 0.0, 118.0)
 
     @Test fun simpleTextFallbackRemainsLoggableAndExplicitlyEstimated() = runBlocking {
@@ -97,7 +119,7 @@ class RegionalNutritionEngineTest {
     }
 
     @Test fun oldEntriesDecodeAndNewProvenanceSurvivesRelogging() {
-        val old = Json.decodeFromString<FoodEntry>("""{"name":"banana","calories":105,"protein":1,"carbs":27,"fat":0,"source":"text"}""")
+        val old = Json.decodeFromString<FoodEntry>("""{"name":"banana","calories":105,"protein":1,"carbs":27,"fat":0,"source":"textInput"}""")
         assertTrue(old.nutritionProvenance.isEmpty())
         val provenance = NutritionProvenance(NutritionSourceKind.USDA, "Fixture", "test-id",
             NutritionEvidence.DATABASE, false, InterpretationConfidence.HIGH, "1 banana", "banana")

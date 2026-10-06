@@ -7,6 +7,29 @@ import org.junit.Test
 
 class MealMicronutrientStretchTest {
     @Test
+    fun sourceUnitsWithoutCompatibleLegacyFieldsSurviveComponentAggregation() {
+        val component = MealIngredient(
+            "Fixture", 100.0, 100, 2.0, 20.0, 1.0,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(0.003, "g"),
+                "vitaminA" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(0.1, "mg"),
+                "creatine" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(10.0, "mg"),
+                "iron" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(1.0, "mg")
+            )
+        )
+        val total = requireNotNull(listOf(component, component).micronutrientTotalsOrNull())
+        assertNull(total.snapshot.sodium)
+        assertNull(total.snapshot.vitaminA)
+        assertTrue(total.snapshot.supplementalNutrients.isEmpty())
+        assertEquals(2.0, total.snapshot.iron!!, 0.0)
+        assertEquals(0.006, total.sourceNutrients.getValue("sodium").amount, 0.0)
+        assertEquals("g", total.sourceNutrients.getValue("sodium").unit)
+        assertEquals(0.2, total.sourceNutrients.getValue("vitaminA").amount, 0.0)
+        assertEquals(20.0, total.sourceNutrients.getValue("creatine").amount, 0.0)
+        assertTrue("iron" !in total.sourceNutrients)
+    }
+
+    @Test
     fun factorUsesNewOverOldWhenBothPositive() {
         assertEquals(2.0, MealMicronutrientStretch.factor(100.0, 200.0)!!, 0.0)
         assertEquals(0.5, MealMicronutrientStretch.factor(200.0, 100.0)!!, 0.0)
