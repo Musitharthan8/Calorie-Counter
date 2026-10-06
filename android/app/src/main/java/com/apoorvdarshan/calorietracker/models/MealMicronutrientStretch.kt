@@ -263,9 +263,11 @@ fun FoodEntry.applyingIngredientChanges(displayedIngredients: List<MealIngredien
         componentMicros != null -> {
             withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
         }
-        ingredients.any { it.micronutrients != null } -> {
-            // Component evidence existed but the new ingredient set can no longer support a full
-            // micronutrient total. Unknown is safer than stretching stale source evidence.
+        ingredients.any { it.micronutrients != null } ||
+            displayedIngredients.any { it.micronutrients != null } -> {
+            // Component evidence exists on either side of the edit, but the new ingredient set
+            // cannot support a complete micronutrient total. Unknown is safer than stretching
+            // stale meal-level evidence across a partially grounded component list.
             withMicros(MealMicronutrientSnapshot()).copy(sourceNutrients = emptyMap())
         }
         else -> {
