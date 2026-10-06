@@ -5,6 +5,11 @@ import com.apoorvdarshan.calorietracker.models.FoodSource
 import com.apoorvdarshan.calorietracker.models.MealType
 import com.apoorvdarshan.calorietracker.models.MealIngredient
 import com.apoorvdarshan.calorietracker.models.UserProfile
+import com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence
+import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
+import com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence
+import com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance
+import com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -81,7 +86,7 @@ class DiaryExporterTest {
         val date = entry.timestamp.atZone(ZoneId.systemDefault()).toLocalDate()
         val (_, json) = requireNotNull(build(entry, date, DiaryFormat.JSON))
         val root = JsonParser.parseString(json).asJsonObject
-        assertEquals("1.5", root["export"].asJsonObject["format_version"].asString)
+        assertEquals("1.6", root["export"].asJsonObject["format_version"].asString)
         val item = root["days"].asJsonArray[0].asJsonObject["meals"].asJsonArray[0]
             .asJsonObject["items"].asJsonArray[0].asJsonObject
 
@@ -92,6 +97,57 @@ class DiaryExporterTest {
         assertEquals(18.8, item["vitamin_b12_mcg"].asDouble, 0.0001)
         assertEquals(5.0, item["supplemental_nutrients_g"].asJsonObject["creatine"].asDouble, 0.0001)
         assertEquals("Rice", item["ingredients"].asJsonArray[0].asJsonObject["name"].asString)
+    }
+
+    @Test
+    fun jsonRoundTripPreservesGroundedNutritionEvidence() {
+        val provenance = NutritionProvenance(
+            source = NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            foodId = "123",
+            evidence = NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice",
+            datasetVersion = "2026-04-30"
+        )
+        val ingredientMicros = mapOf(
+            "sodium" to NutrientAmount(3.0, "mg"),
+            "phosphorus" to NutrientAmount(40.0, "mg")
+        )
+        val entry = FoodEntry(
+            name = "Grounded rice",
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            timestamp = Instant.ofEpochSecond(1_752_840_000),
+            source = FoodSource.TEXT_INPUT,
+            mealType = MealType.LUNCH,
+            sodium = 3.0,
+            sourceNutrients = mapOf("phosphorus" to NutrientAmount(40.0, "mg")),
+            servingSizeGrams = 100.0,
+            ingredients = listOf(
+                MealIngredient(
+                    "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+                    nutritionProvenance = provenance,
+                    micronutrients = ingredientMicros
+                )
+            ),
+            nutritionProvenance = listOf(provenance),
+            nutritionWarnings = listOf("Grounded fixture")
+        )
+        val date = entry.timestamp.atZone(ZoneId.systemDefault()).toLocalDate()
+        val (_, json) = requireNotNull(build(entry, date, DiaryFormat.JSON))
+
+        val imported = DiaryImporter.parse(json).entries.single()
+
+        assertEquals(entry.sourceNutrients, imported.sourceNutrients)
+        assertEquals(entry.nutritionProvenance, imported.nutritionProvenance)
+        assertEquals(entry.nutritionWarnings, imported.nutritionWarnings)
+        assertEquals(ingredientMicros, imported.ingredients.single().micronutrients)
+        assertEquals(provenance, imported.ingredients.single().nutritionProvenance)
     }
 
     @Test
