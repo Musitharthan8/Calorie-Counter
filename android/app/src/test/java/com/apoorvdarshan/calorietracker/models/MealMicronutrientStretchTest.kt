@@ -170,6 +170,39 @@ class MealMicronutrientStretchTest {
     }
 
     @Test
+    fun newlyAddedComponentEvidenceClearsLegacyParentMicronutrientsWhenCoverageIsIncomplete() {
+        val legacyRice = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3
+        )
+        val groundedChicken = MealIngredient(
+            "Chicken", 100.0, 165, 31.0, 0.0, 3.6,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(70.0, "mg")
+            )
+        )
+        val entry = FoodEntry(
+            name = "Legacy bowl",
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            source = FoodSource.MANUAL,
+            sodium = 400.0,
+            sourceNutrients = mapOf(
+                "phosphorus" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(100.0, "mg")
+            ),
+            servingSizeGrams = 100.0,
+            ingredients = listOf(legacyRice)
+        )
+
+        val updated = entry.applyingIngredientChanges(listOf(legacyRice, groundedChicken))
+
+        assertNull(updated.sodium)
+        assertTrue(updated.sourceNutrients.isEmpty())
+        assertEquals(200.0, updated.servingSizeGrams!!, 0.0)
+    }
+
+    @Test
     fun invalidatedComponentEvidenceClearsParentMicronutrientsInsteadOfStretchingThem() {
         val rice = MealIngredient(
             "Rice", 100.0, 130, 2.0, 28.0, 0.3,
