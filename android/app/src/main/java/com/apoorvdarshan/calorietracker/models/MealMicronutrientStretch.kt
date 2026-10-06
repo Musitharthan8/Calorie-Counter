@@ -1,5 +1,7 @@
 package com.apoorvdarshan.calorietracker.models
 
+import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
+
 /** Meal-level micro stretch used when ingredients change but micros are not per-ingredient. */
 object MealMicronutrientStretch {
     fun factor(oldGrams: Double, newGrams: Double): Double? {
@@ -100,6 +102,125 @@ data class MealMicronutrientSnapshot(
     }
 }
 
+fun MealMicronutrientSnapshot.toNutrientMap(
+    sourceNutrients: Map<String, NutrientAmount> = emptyMap()
+): Map<String, NutrientAmount> = buildMap {
+    fun add(key: String, value: Double?, unit: String) {
+        value?.takeIf { it.isFinite() && it >= 0.0 }?.let {
+            put(key, NutrientAmount(it, unit))
+        }
+    }
+
+    add("sugar", sugar, "g")
+    add("addedSugar", addedSugar, "g")
+    add("fiber", fiber, "g")
+    add("saturatedFat", saturatedFat, "g")
+    add("monounsaturatedFat", monounsaturatedFat, "g")
+    add("polyunsaturatedFat", polyunsaturatedFat, "g")
+    add("cholesterol", cholesterol, "mg")
+    add("caffeine", caffeine, "mg")
+    supplementalNutrients.forEach { (key, value) -> add(key, value, "g") }
+    add("sodium", sodium, "mg")
+    add("potassium", potassium, "mg")
+    add("transFat", transFat, "g")
+    add("calcium", calcium, "mg")
+    add("iron", iron, "mg")
+    add("magnesium", magnesium, "mg")
+    add("zinc", zinc, "mg")
+    add("vitaminA", vitaminA, "ug")
+    add("vitaminC", vitaminC, "mg")
+    add("vitaminD", vitaminD, "ug")
+    add("vitaminB12", vitaminB12, "ug")
+    add("vitaminE", vitaminE, "mg")
+    add("vitaminK", vitaminK, "ug")
+    add("folate", folate, "ug")
+    add("omega3", omega3, "g")
+    sourceNutrients.forEach { (key, nutrient) ->
+        if (key !in this && nutrient.amount.isFinite() && nutrient.amount >= 0.0) {
+            put(key, nutrient)
+        }
+    }
+}
+
+data class IngredientMicronutrientTotals(
+    val snapshot: MealMicronutrientSnapshot,
+    val sourceNutrients: Map<String, NutrientAmount>
+)
+
+/**
+ * Recompute micronutrients from component evidence.
+ *
+ * Returns null when any ingredient lacks a component-level micronutrient snapshot. Within a fully
+ * evidenced meal, only nutrients present for every component in the same unit are summed. Missing
+ * source values remain unknown rather than becoming zero.
+ */
+fun List<MealIngredient>.micronutrientTotalsOrNull(): IngredientMicronutrientTotals? {
+    if (isEmpty() || any { it.micronutrients == null }) return null
+    val maps = map { requireNotNull(it.micronutrients) }
+    val commonKeys = maps
+        .map { it.keys }
+        .reduce { left, right -> left intersect right }
+
+    val totals = buildMap {
+        commonKeys.forEach { key ->
+            val values = maps.mapNotNull { it[key] }
+            val unit = values.firstOrNull()?.unit ?: return@forEach
+            if (values.size != maps.size || values.any { it.unit != unit }) return@forEach
+            var total = 0.0
+            var valid = true
+            values.forEach { nutrient ->
+                if (!valid || !nutrient.amount.isFinite() || nutrient.amount < 0.0) {
+                    valid = false
+                    return@forEach
+                }
+                total += nutrient.amount
+                if (!total.isFinite() || total < 0.0) valid = false
+            }
+            if (valid) put(key, NutrientAmount(total, unit))
+        }
+    }
+
+    fun amount(key: String, unit: String): Double? =
+        totals[key]?.takeIf { it.unit == unit }?.amount
+
+    val supplemental = SupplementalNutrient.values().mapNotNull { nutrient ->
+        amount(nutrient.storageKey, "g")?.let { nutrient.storageKey to it }
+    }.toMap()
+    val snapshot = MealMicronutrientSnapshot(
+        sugar = amount("sugar", "g"),
+        addedSugar = amount("addedSugar", "g"),
+        fiber = amount("fiber", "g"),
+        saturatedFat = amount("saturatedFat", "g"),
+        monounsaturatedFat = amount("monounsaturatedFat", "g"),
+        polyunsaturatedFat = amount("polyunsaturatedFat", "g"),
+        cholesterol = amount("cholesterol", "mg"),
+        caffeine = amount("caffeine", "mg"),
+        supplementalNutrients = supplemental,
+        sodium = amount("sodium", "mg"),
+        potassium = amount("potassium", "mg"),
+        transFat = amount("transFat", "g"),
+        calcium = amount("calcium", "mg"),
+        iron = amount("iron", "mg"),
+        magnesium = amount("magnesium", "mg"),
+        zinc = amount("zinc", "mg"),
+        vitaminA = amount("vitaminA", "ug"),
+        vitaminC = amount("vitaminC", "mg"),
+        vitaminD = amount("vitaminD", "ug"),
+        vitaminB12 = amount("vitaminB12", "ug"),
+        vitaminE = amount("vitaminE", "mg"),
+        vitaminK = amount("vitaminK", "ug"),
+        folate = amount("folate", "ug"),
+        omega3 = amount("omega3", "g")
+    )
+    // A known key with another source unit still needs the unit-aware map. Remove only
+    // nutrients actually represented by a compatible typed field, not every known name.
+    val representedKeys = snapshot.toNutrientMap().keys
+    return IngredientMicronutrientTotals(
+        snapshot = snapshot,
+        sourceNutrients = totals.filterKeys { it !in representedKeys }
+    )
+}
+
 fun FoodEntry.withMicros(snapshot: MealMicronutrientSnapshot): FoodEntry = copy(
     sugar = snapshot.sugar,
     addedSugar = snapshot.addedSugar,
@@ -130,9 +251,34 @@ fun FoodEntry.withMicros(snapshot: MealMicronutrientSnapshot): FoodEntry = copy(
 /** Review/Edit Food ingredient edits reset meal scale to 1.0, so micros must be rewritten. */
 fun FoodEntry.applyingIngredientChanges(displayedIngredients: List<MealIngredient>): FoodEntry {
     val totals = displayedIngredients.totals()
-    val stretched = MealMicronutrientSnapshot.from(this)
-        .stretched(ingredients.totals().grams, totals.grams)
-    return withMicros(stretched).copy(
+    val componentMicros = displayedIngredients.micronutrientTotalsOrNull()
+    val previousGrams = ingredients.totals().grams
+    val fallbackFactor = MealMicronutrientStretch.factor(previousGrams, totals.grams)
+    val base = when {
+        componentMicros != null -> {
+            withMicros(componentMicros.snapshot).copy(sourceNutrients = componentMicros.sourceNutrients)
+        }
+        ingredients.any { it.micronutrients != null } ||
+            displayedIngredients.any { it.micronutrients != null } -> {
+            // Component evidence exists on either side of the edit, but the new ingredient set
+            // cannot support a complete micronutrient total. Unknown is safer than stretching
+            // stale meal-level evidence across a partially grounded component list.
+            withMicros(MealMicronutrientSnapshot()).copy(sourceNutrients = emptyMap())
+        }
+        else -> {
+            val stretched = MealMicronutrientSnapshot.from(this).stretched(previousGrams, totals.grams)
+            val stretchedSource = if (fallbackFactor == null) {
+                sourceNutrients
+            } else {
+                sourceNutrients.mapNotNull { (key, nutrient) ->
+                    val amount = nutrient.amount * fallbackFactor
+                    if (amount.isFinite() && amount >= 0.0) key to nutrient.copy(amount = amount) else null
+                }.toMap()
+            }
+            withMicros(stretched).copy(sourceNutrients = stretchedSource)
+        }
+    }
+    return base.copy(
         calories = totals.calories,
         protein = totals.protein,
         carbs = totals.carbs,

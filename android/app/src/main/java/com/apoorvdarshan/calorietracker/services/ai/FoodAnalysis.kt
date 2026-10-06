@@ -38,6 +38,12 @@ data class FoodAnalysis(
     val cholesterol: Double? = null,
     val caffeine: Double? = null,
     val supplementalNutrients: Map<String, Double> = emptyMap(),
+    /**
+     * Source-authored nutrients that do not have a dedicated legacy FoodAnalysis field.
+     * Units are preserved so regional datasets never need to mislabel concepts such as
+     * INDB free sugar, phosphorus, vitamin B6 or niacin.
+     */
+    val sourceNutrients: Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount> = emptyMap(),
     val sodium: Double? = null,
     val potassium: Double? = null,
     val transFat: Double? = null,
@@ -61,7 +67,10 @@ data class FoodAnalysis(
     val customNote: String? = null,
     val progressiveMeal: Boolean = false,
     val ingredients: List<MealIngredient> = emptyList(),
-    val productMetadata: FoodProductMetadata? = null
+    val productMetadata: FoodProductMetadata? = null,
+    val mealInterpretation: com.apoorvdarshan.calorietracker.nutrition.MealInterpretation? = null,
+    val nutritionProvenance: List<com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance> = emptyList(),
+    val nutritionWarnings: List<String> = emptyList()
 ) {
     /** When the model also returned a breakdown, the header macros are the sum of that list. */
     fun withIngredientMacroTotals(): FoodAnalysis {
@@ -111,42 +120,58 @@ data class NutritionLabelAnalysis(
     val servingUnitOptions: List<ServingUnitOption> = emptyList()
 ) {
     fun scaled(toGrams: Double): FoodAnalysis {
+        require(toGrams.isFinite() && toGrams > 0 && toGrams <= 1_000_000.0) {
+            "Invalid nutrition-label serving mass"
+        }
         val scale = toGrams / 100.0
-        fun s(v: Double?) = v?.let { round(it * scale * 10) / 10 }
+        fun scaledRequired(value: Double, label: String): Double {
+            require(value.isFinite() && value >= 0) { "Invalid $label value" }
+            val scaled = value * scale
+            require(scaled.isFinite() && scaled >= 0) { "Unsafe $label total" }
+            return scaled
+        }
+        fun scaledOptional(value: Double?): Double? = value?.let {
+            require(it.isFinite() && it >= 0) { "Invalid optional nutrient value" }
+            val scaled = round(it * scale * 10) / 10
+            require(scaled.isFinite() && scaled >= 0) { "Unsafe optional nutrient total" }
+            scaled
+        }
+        val scaledCalories = scaledRequired(caloriesPer100g, "calorie")
+        require(scaledCalories <= Int.MAX_VALUE.toDouble()) { "Calorie total exceeds supported range" }
         val selectedOption = servingUnitOptions.firstOrNull()
         return FoodAnalysis(
             name = name,
-            calories = (caloriesPer100g * scale).toInt(),
-            protein = proteinPer100g * scale,
-            carbs = carbsPer100g * scale,
-            fat = fatPer100g * scale,
+            calories = scaledCalories.roundToInt(),
+            protein = scaledRequired(proteinPer100g, "protein"),
+            carbs = scaledRequired(carbsPer100g, "carbohydrate"),
+            fat = scaledRequired(fatPer100g, "fat"),
             servingSizeGrams = toGrams,
-            sugar = s(sugarPer100g),
-            addedSugar = s(addedSugarPer100g),
-            fiber = s(fiberPer100g),
-            saturatedFat = s(saturatedFatPer100g),
-            monounsaturatedFat = s(monounsaturatedFatPer100g),
-            polyunsaturatedFat = s(polyunsaturatedFatPer100g),
-            cholesterol = s(cholesterolPer100g),
-            caffeine = s(caffeinePer100g),
+            sugar = scaledOptional(sugarPer100g),
+            addedSugar = scaledOptional(addedSugarPer100g),
+            fiber = scaledOptional(fiberPer100g),
+            saturatedFat = scaledOptional(saturatedFatPer100g),
+            monounsaturatedFat = scaledOptional(monounsaturatedFatPer100g),
+            polyunsaturatedFat = scaledOptional(polyunsaturatedFatPer100g),
+            cholesterol = scaledOptional(cholesterolPer100g),
+            caffeine = scaledOptional(caffeinePer100g),
             supplementalNutrients = supplementalNutrientsPer100g.mapValues { (_, value) ->
-                round(value * scale * 10) / 10
+                scaledOptional(value) ?: throw IllegalArgumentException("Invalid supplemental nutrient")
             },
-            sodium = s(sodiumPer100g),
-            potassium = s(potassiumPer100g),
-            transFat = s(transFatPer100g),
-            calcium = s(calciumPer100g),
-            iron = s(ironPer100g),
-            magnesium = s(magnesiumPer100g),
-            zinc = s(zincPer100g),
-            vitaminA = s(vitaminAPer100g),
-            vitaminC = s(vitaminCPer100g),
-            vitaminD = s(vitaminDPer100g),
-            vitaminB12 = s(vitaminB12Per100g),
-            vitaminE = s(vitaminEPer100g),
-            vitaminK = s(vitaminKPer100g),
-            folate = s(folatePer100g),
-            omega3 = s(omega3Per100g),
+            sodium = scaledOptional(sodiumPer100g),
+            potassium = scaledOptional(potassiumPer100g),
+            transFat = scaledOptional(transFatPer100g),
+            calcium = scaledOptional(calciumPer100g),
+            iron = scaledOptional(ironPer100g),
+            magnesium = scaledOptional(magnesiumPer100g),
+            zinc = scaledOptional(zincPer100g),
+            vitaminA = scaledOptional(vitaminAPer100g),
+            vitaminC = scaledOptional(vitaminCPer100g),
+            vitaminD = scaledOptional(vitaminDPer100g),
+            vitaminB12 = scaledOptional(vitaminB12Per100g),
+            vitaminE = scaledOptional(vitaminEPer100g),
+            vitaminK = scaledOptional(vitaminKPer100g),
+            folate = scaledOptional(folatePer100g),
+            omega3 = scaledOptional(omega3Per100g),
             servingUnitOptions = servingUnitOptions,
             selectedServingUnit = selectedOption?.unit,
             selectedServingQuantity = selectedOption?.quantityFor(toGrams)
@@ -184,6 +209,9 @@ internal data class ServingUnitOptionsParseResult(
 )
 
 internal object FoodJsonParser {
+    private const val MAX_AI_NUTRITION_VALUE = 1_000_000_000.0
+    private const val MAX_AI_SERVING_GRAMS = 1_000_000.0
+
 
     fun extractJson(text: String): String {
         var cleaned = text.trim()
@@ -227,47 +255,66 @@ internal object FoodJsonParser {
         val json = runCatching { JSONObject(extractedJson) }.getOrNull()
             ?: throw AiError.InvalidResponse
         val name = json.optString("name").takeIf { it.isNotEmpty() } ?: throw AiError.InvalidResponse
-        val responseServingSizeGrams = optDouble(json, "serving_size_grams")
+        fun parsedDouble(key: String): Double? = optDouble(json, key)
+        fun requiredNutrition(key: String): Double =
+            parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        fun optionalNutrition(key: String): Double? {
+            if (!json.has(key) || json.isNull(key)) return null
+            return parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        }
+
+        val responseServingSizeGrams = if (json.has("serving_size_grams") && !json.isNull("serving_size_grams")) {
+            parsedDouble("serving_size_grams")
+                ?.takeIf { it > 0.0 && it <= MAX_AI_SERVING_GRAMS }
+                ?: throw AiError.InvalidResponse
+        } else {
+            null
+        }
         val servingSizeGrams = responseServingSizeGrams ?: 1.0
         val unitOptionsResult = parseServingUnitOptionsResult(extractedJson, responseServingSizeGrams)
         val unitOptions = unitOptionsResult.options
         val selectedOption = unitOptions.firstOrNull()
-        fun optDouble(key: String): Double? =
-            optDouble(json, key)
+        val calorieValue = requiredNutrition("calories")
+            .takeIf { it <= Int.MAX_VALUE.toDouble() }
+            ?: throw AiError.InvalidResponse
         val analysis = FoodAnalysis(
             name = name,
-            calories = json.optInt("calories"),
-            protein = optDouble("protein") ?: 0.0,
-            carbs = optDouble("carbs") ?: 0.0,
-            fat = optDouble("fat") ?: 0.0,
+            calories = calorieValue.roundToInt(),
+            protein = requiredNutrition("protein"),
+            carbs = requiredNutrition("carbs"),
+            fat = requiredNutrition("fat"),
             servingSizeGrams = servingSizeGrams,
             emoji = json.optString("emoji").takeIf { it.isNotEmpty() },
-            sugar = optDouble("sugar"),
-            addedSugar = optDouble("added_sugar"),
-            fiber = optDouble("fiber"),
-            saturatedFat = optDouble("saturated_fat"),
-            monounsaturatedFat = optDouble("monounsaturated_fat"),
-            polyunsaturatedFat = optDouble("polyunsaturated_fat"),
-            cholesterol = optDouble("cholesterol"),
-            caffeine = optDouble("caffeine"),
+            sugar = optionalNutrition("sugar"),
+            addedSugar = optionalNutrition("added_sugar"),
+            fiber = optionalNutrition("fiber"),
+            saturatedFat = optionalNutrition("saturated_fat"),
+            monounsaturatedFat = optionalNutrition("monounsaturated_fat"),
+            polyunsaturatedFat = optionalNutrition("polyunsaturated_fat"),
+            cholesterol = optionalNutrition("cholesterol"),
+            caffeine = optionalNutrition("caffeine"),
             supplementalNutrients = SupplementalNutrient.values().mapNotNull { nutrient ->
-                optDouble(nutrient.apiKey)?.let { nutrient.storageKey to it }
+                optionalNutrition(nutrient.apiKey)?.let { nutrient.storageKey to it }
             }.toMap(),
-            sodium = optDouble("sodium"),
-            potassium = optDouble("potassium"),
-            transFat = optDouble("trans_fat"),
-            calcium = optDouble("calcium"),
-            iron = optDouble("iron"),
-            magnesium = optDouble("magnesium"),
-            zinc = optDouble("zinc"),
-            vitaminA = optDouble("vitamin_a"),
-            vitaminC = optDouble("vitamin_c"),
-            vitaminD = optDouble("vitamin_d"),
-            vitaminB12 = optDouble("vitamin_b12"),
-            vitaminE = optDouble("vitamin_e"),
-            vitaminK = optDouble("vitamin_k"),
-            folate = optDouble("folate"),
-            omega3 = optDouble("omega_3"),
+            sodium = optionalNutrition("sodium"),
+            potassium = optionalNutrition("potassium"),
+            transFat = optionalNutrition("trans_fat"),
+            calcium = optionalNutrition("calcium"),
+            iron = optionalNutrition("iron"),
+            magnesium = optionalNutrition("magnesium"),
+            zinc = optionalNutrition("zinc"),
+            vitaminA = optionalNutrition("vitamin_a"),
+            vitaminC = optionalNutrition("vitamin_c"),
+            vitaminD = optionalNutrition("vitamin_d"),
+            vitaminB12 = optionalNutrition("vitamin_b12"),
+            vitaminE = optionalNutrition("vitamin_e"),
+            vitaminK = optionalNutrition("vitamin_k"),
+            folate = optionalNutrition("folate"),
+            omega3 = optionalNutrition("omega_3"),
             ingredients = parseIngredients(json),
             servingUnitOptions = unitOptions,
             selectedServingUnit = if (responseServingSizeGrams == null) "serving" else selectedOption?.unit,
@@ -291,7 +338,14 @@ internal object FoodJsonParser {
                 val protein = optDouble(item, "protein") ?: continue
                 val carbs = optDouble(item, "carbs") ?: continue
                 val fat = optDouble(item, "fat") ?: continue
-                if (name.isEmpty() || grams <= 0 || listOf(calories, protein, carbs, fat).any { it < 0 }) continue
+                if (
+                    name.isEmpty() ||
+                    grams <= 0 ||
+                    grams > MAX_AI_SERVING_GRAMS ||
+                    calories < 0 ||
+                    calories > Int.MAX_VALUE.toDouble() ||
+                    listOf(protein, carbs, fat).any { it < 0 || it > MAX_AI_NUTRITION_VALUE }
+                ) continue
                 add(
                     MealIngredient(
                         name = name,
@@ -313,43 +367,58 @@ internal object FoodJsonParser {
         val json = runCatching { JSONObject(extractedJson) }.getOrNull()
             ?: throw AiError.InvalidResponse
         val name = json.optString("name").takeIf { it.isNotEmpty() } ?: throw AiError.InvalidResponse
-        fun optDouble(key: String): Double? =
-            optDouble(json, key)
-        val servingSizeGrams = optDouble("serving_size_grams")
+        fun parsedDouble(key: String): Double? = optDouble(json, key)
+        fun requiredLabelValue(key: String): Double =
+            parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        fun optionalLabelValue(key: String): Double? {
+            if (!json.has(key) || json.isNull(key)) return null
+            return parsedDouble(key)
+                ?.takeIf { it >= 0.0 && it <= MAX_AI_NUTRITION_VALUE }
+                ?: throw AiError.InvalidResponse
+        }
+        val servingSizeGrams = if (json.has("serving_size_grams") && !json.isNull("serving_size_grams")) {
+            parsedDouble("serving_size_grams")
+                ?.takeIf { it > 0.0 && it <= MAX_AI_SERVING_GRAMS }
+                ?: throw AiError.InvalidResponse
+        } else {
+            null
+        }
         val unitOptionsResult = parseServingUnitOptionsResult(extractedJson, servingSizeGrams)
         val analysis = NutritionLabelAnalysis(
             name = name,
-            caloriesPer100g = optDouble("calories_per_100g") ?: throw AiError.InvalidResponse,
-            proteinPer100g = optDouble("protein_per_100g") ?: throw AiError.InvalidResponse,
-            carbsPer100g = optDouble("carbs_per_100g") ?: throw AiError.InvalidResponse,
-            fatPer100g = optDouble("fat_per_100g") ?: throw AiError.InvalidResponse,
+            caloriesPer100g = requiredLabelValue("calories_per_100g"),
+            proteinPer100g = requiredLabelValue("protein_per_100g"),
+            carbsPer100g = requiredLabelValue("carbs_per_100g"),
+            fatPer100g = requiredLabelValue("fat_per_100g"),
             servingSizeGrams = servingSizeGrams,
-            sugarPer100g = optDouble("sugar_per_100g"),
-            addedSugarPer100g = optDouble("added_sugar_per_100g"),
-            fiberPer100g = optDouble("fiber_per_100g"),
-            saturatedFatPer100g = optDouble("saturated_fat_per_100g"),
-            monounsaturatedFatPer100g = optDouble("monounsaturated_fat_per_100g"),
-            polyunsaturatedFatPer100g = optDouble("polyunsaturated_fat_per_100g"),
-            cholesterolPer100g = optDouble("cholesterol_per_100g"),
-            caffeinePer100g = optDouble("caffeine_per_100g"),
+            sugarPer100g = optionalLabelValue("sugar_per_100g"),
+            addedSugarPer100g = optionalLabelValue("added_sugar_per_100g"),
+            fiberPer100g = optionalLabelValue("fiber_per_100g"),
+            saturatedFatPer100g = optionalLabelValue("saturated_fat_per_100g"),
+            monounsaturatedFatPer100g = optionalLabelValue("monounsaturated_fat_per_100g"),
+            polyunsaturatedFatPer100g = optionalLabelValue("polyunsaturated_fat_per_100g"),
+            cholesterolPer100g = optionalLabelValue("cholesterol_per_100g"),
+            caffeinePer100g = optionalLabelValue("caffeine_per_100g"),
             supplementalNutrientsPer100g = SupplementalNutrient.values().mapNotNull { nutrient ->
-                optDouble("${nutrient.apiKey}_per_100g")?.let { nutrient.storageKey to it }
+                optionalLabelValue("${nutrient.apiKey}_per_100g")?.let { nutrient.storageKey to it }
             }.toMap(),
-            sodiumPer100g = optDouble("sodium_per_100g"),
-            potassiumPer100g = optDouble("potassium_per_100g"),
-            transFatPer100g = optDouble("trans_fat_per_100g"),
-            calciumPer100g = optDouble("calcium_per_100g"),
-            ironPer100g = optDouble("iron_per_100g"),
-            magnesiumPer100g = optDouble("magnesium_per_100g"),
-            zincPer100g = optDouble("zinc_per_100g"),
-            vitaminAPer100g = optDouble("vitamin_a_per_100g"),
-            vitaminCPer100g = optDouble("vitamin_c_per_100g"),
-            vitaminDPer100g = optDouble("vitamin_d_per_100g"),
-            vitaminB12Per100g = optDouble("vitamin_b12_per_100g"),
-            vitaminEPer100g = optDouble("vitamin_e_per_100g"),
-            vitaminKPer100g = optDouble("vitamin_k_per_100g"),
-            folatePer100g = optDouble("folate_per_100g"),
-            omega3Per100g = optDouble("omega_3_per_100g"),
+            sodiumPer100g = optionalLabelValue("sodium_per_100g"),
+            potassiumPer100g = optionalLabelValue("potassium_per_100g"),
+            transFatPer100g = optionalLabelValue("trans_fat_per_100g"),
+            calciumPer100g = optionalLabelValue("calcium_per_100g"),
+            ironPer100g = optionalLabelValue("iron_per_100g"),
+            magnesiumPer100g = optionalLabelValue("magnesium_per_100g"),
+            zincPer100g = optionalLabelValue("zinc_per_100g"),
+            vitaminAPer100g = optionalLabelValue("vitamin_a_per_100g"),
+            vitaminCPer100g = optionalLabelValue("vitamin_c_per_100g"),
+            vitaminDPer100g = optionalLabelValue("vitamin_d_per_100g"),
+            vitaminB12Per100g = optionalLabelValue("vitamin_b12_per_100g"),
+            vitaminEPer100g = optionalLabelValue("vitamin_e_per_100g"),
+            vitaminKPer100g = optionalLabelValue("vitamin_k_per_100g"),
+            folatePer100g = optionalLabelValue("folate_per_100g"),
+            omega3Per100g = optionalLabelValue("omega_3_per_100g"),
             servingUnitOptions = unitOptionsResult.options
         )
         return ParsedNutritionLabelResponse(

@@ -240,7 +240,34 @@ class AppContainer(app: FudAIApp) {
     val localGemma = LocalGemmaRuntime(app, localModels)
     val localWhisper = LocalWhisperRuntime(app, localModels)
 
-    val foodAnalysis = FoodAnalysisService(prefs, keyStore, localGemma = localGemma)
+    val foodAnalysis = FoodAnalysisService(
+        prefs, keyStore, localGemma = localGemma,
+        nutritionSources = buildList {
+            add(
+                com.apoorvdarshan.calorietracker.nutrition.PersonalFoodSource {
+                    val favorites = foodRepository.migratedFavorites()
+                    val favoriteNames = favorites
+                        .map { it.name.trim().lowercase(java.util.Locale.ROOT) }
+                        .toSet()
+                    val learnedGroups = foodRepository.frequent()
+                        .filter { it.count >= 3 }
+                        .filter {
+                            it.template.name.trim().lowercase(java.util.Locale.ROOT) !in favoriteNames
+                        }
+                        .groupBy { it.template.name.trim().lowercase(java.util.Locale.ROOT) }
+                    val learned = learnedGroups.values
+                        // Multiple repeated calorie/macro variants with the same name are not a
+                        // stable habit. Require the user to Favourite the intended one instead.
+                        .filter { variants -> variants.size == 1 }
+                        .map { variants -> variants.single().template }
+                    favorites + learned
+                }
+            )
+            add(com.apoorvdarshan.calorietracker.nutrition.SingaporeBrandNutritionSource())
+            add(com.apoorvdarshan.calorietracker.nutrition.OpenFoodFactsNutritionSource())
+            addAll(com.apoorvdarshan.calorietracker.nutrition.BundledNutritionSources.create(app))
+        }
+    )
     val chatService = ChatService(prefs, keyStore, localGemma = localGemma)
     val speechService = SpeechService(prefs, keyStore, localWhisper = localWhisper)
 

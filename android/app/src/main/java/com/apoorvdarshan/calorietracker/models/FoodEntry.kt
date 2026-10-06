@@ -33,6 +33,8 @@ data class FoodEntry(
     val caffeine: Double? = null,
     /** Optional sports-nutrition compounds, stored in grams by SupplementalNutrient.storageKey. */
     val supplementalNutrients: Map<String, Double> = emptyMap(),
+    /** Source-authored nutrients without dedicated legacy FoodEntry fields, with units preserved. */
+    val sourceNutrients: Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount> = emptyMap(),
     val sodium: Double? = null,
     val potassium: Double? = null,
     val transFat: Double? = null,
@@ -58,7 +60,10 @@ data class FoodEntry(
     /** Origin of a Health Connect import; never export these entries back to Health Connect. */
     val healthConnectOrigin: String? = null,
     val healthConnectRecordId: String? = null,
-    val productMetadata: FoodProductMetadata? = null
+    val productMetadata: FoodProductMetadata? = null,
+    val mealInterpretation: com.apoorvdarshan.calorietracker.nutrition.MealInterpretation? = null,
+    val nutritionProvenance: List<com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance> = emptyList(),
+    val nutritionWarnings: List<String> = emptyList()
 ) {
     /** Unique key for favorite deduplication (name + calorie combo). */
     val favoriteKey: String get() = "${name.lowercase()}|$calories"
@@ -112,6 +117,7 @@ data class FoodEntry(
         cholesterol = cholesterol,
         caffeine = caffeine,
         supplementalNutrients = supplementalNutrients,
+        sourceNutrients = sourceNutrients,
         sodium = sodium,
         potassium = potassium,
         transFat = transFat,
@@ -134,7 +140,10 @@ data class FoodEntry(
         customNote = customNote,
         progressiveMeal = progressiveMeal,
         ingredients = ingredients,
-        productMetadata = productMetadata
+        productMetadata = productMetadata,
+        mealInterpretation = mealInterpretation,
+        nutritionProvenance = nutritionProvenance,
+        nutritionWarnings = nutritionWarnings
     )
 
     val allImageFilenames: List<String>

@@ -99,6 +99,7 @@ data class HomeUiState(
     val foodLoggingBlocked: Boolean = false,
     val fastingOverlap: Boolean = false,
     val error: String? = null,
+    val clarification: com.apoorvdarshan.calorietracker.nutrition.MealInterpretation? = null,
     /** When true, the error dialog's primary action opens the food camera instead of retrying. */
     val errorOffersScanLabel: Boolean = false,
 /** Daily step total from Health Connect for [date]; null when health is off, unreadable, or loading. */
@@ -436,6 +437,7 @@ viewModelScope.launch {
             container.analyzingFood.value = true
             _ui.value = _ui.value.copy(
                 analyzing = true,
+                clarification = null,
                 error = null,
                 errorOffersScanLabel = false,
                 pendingAnalysis = null,
@@ -452,6 +454,9 @@ viewModelScope.launch {
                 savePendingDraft(analysis, imageBytes = null, source = FoodSource.TEXT_INPUT)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: com.apoorvdarshan.calorietracker.nutrition.MealClarificationRequired) {
+                ensureActive()
+                _ui.value = _ui.value.copy(analyzing = false, error = null, clarification = e.interpretation, errorOffersScanLabel = false)
             } catch (e: AiError) {
                 ensureActive()
                 _ui.value = _ui.value.copy(analyzing = false, error = e.userMessage(container.appContext), errorOffersScanLabel = false)
@@ -469,6 +474,7 @@ viewModelScope.launch {
             container.analyzingFood.value = true
             _ui.value = _ui.value.copy(
                 analyzing = true,
+                clarification = null,
                 error = null,
                 errorOffersScanLabel = false,
                 pendingAnalysis = null,
@@ -509,6 +515,7 @@ viewModelScope.launch {
             container.analyzingFood.value = true
             _ui.value = _ui.value.copy(
                 analyzing = true,
+                clarification = null,
                 error = null,
                 errorOffersScanLabel = false,
                 pendingAnalysis = null,
@@ -546,6 +553,7 @@ viewModelScope.launch {
             container.analyzingFood.value = true
             _ui.value = _ui.value.copy(
                 analyzing = true,
+                clarification = null,
                 error = null,
                 errorOffersScanLabel = false,
                 pendingAnalysis = null,
@@ -661,6 +669,9 @@ viewModelScope.launch {
                     cholesterol = s(analysis.cholesterol),
                     caffeine = s(analysis.caffeine),
                     supplementalNutrients = analysis.supplementalNutrients.mapValues { (_, value) -> s(value) ?: 0.0 },
+                    sourceNutrients = analysis.sourceNutrients.mapValues { (_, nutrient) ->
+                        nutrient.copy(amount = nutrient.amount * scale)
+                    },
                     sodium = s(analysis.sodium),
                     potassium = s(analysis.potassium),
                     transFat = s(analysis.transFat),
@@ -695,7 +706,10 @@ viewModelScope.launch {
                     customNote = analysis.customNote,
                     progressiveMeal = analysis.progressiveMeal,
                     ingredients = analysis.ingredients.map { it.scaled(scale) },
-                    productMetadata = analysis.productMetadata
+                    productMetadata = analysis.productMetadata,
+                    mealInterpretation = analysis.mealInterpretation,
+                    nutritionProvenance = analysis.nutritionProvenance,
+                    nutritionWarnings = analysis.nutritionWarnings
                 )
                 if (!container.foodRepository.addEntry(entry)) {
                     reportFoodBlockedByFast()
@@ -761,6 +775,7 @@ viewModelScope.launch {
             pendingDraftImageFilename = null,
             pendingDraftAdditionalImageFilenames = emptyList(),
             pendingReviewSource = null,
+            clarification = null,
             error = null,
             errorOffersScanLabel = false
         )
@@ -1145,6 +1160,7 @@ private fun FoodEntry.toAnalysis(): FoodAnalysis = FoodAnalysis(
     cholesterol = cholesterol,
     caffeine = caffeine,
     supplementalNutrients = supplementalNutrients,
+    sourceNutrients = sourceNutrients,
     sodium = sodium,
     potassium = potassium,
     transFat = transFat,
@@ -1167,5 +1183,8 @@ private fun FoodEntry.toAnalysis(): FoodAnalysis = FoodAnalysis(
     customNote = customNote,
     progressiveMeal = progressiveMeal,
     ingredients = ingredients,
-    productMetadata = productMetadata
+    productMetadata = productMetadata,
+    mealInterpretation = mealInterpretation,
+    nutritionProvenance = nutritionProvenance,
+    nutritionWarnings = nutritionWarnings
 )

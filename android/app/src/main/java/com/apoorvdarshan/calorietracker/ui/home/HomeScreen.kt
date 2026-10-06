@@ -1107,6 +1107,15 @@ CalorieHero(
         )
     }
 
+    ui.clarification?.let { meal ->
+        TextInputDialog(
+            initialText = meal.rawText,
+            guidance = meal.ambiguities.filter { it.affectsNutrition }.joinToString("\n") { it.question },
+            onDismiss = vm::dismissPending,
+            onSubmit = { vm.analyzeText(it) }
+        )
+    }
+
     ui.error?.let { err ->
         FudGlassDialog(onDismissRequest = { vm.dismissPending() }) {
             Text(
@@ -2973,7 +2982,13 @@ private fun AnalysisResultDialog(
 }
 
 @Composable
-internal fun TextInputDialog(onDismiss: () -> Unit, onSubmit: (String) -> Unit, examples: List<String>? = null) {
+internal fun TextInputDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+    examples: List<String>? = null,
+    initialText: String = "",
+    guidance: String? = null
+) {
     // Keep the input composable stable so rotating placeholder examples do not drop IME focus.
     val placeholders = examples?.takeIf { it.isNotEmpty() } ?: listOf(
         stringResource(R.string.text_input_placeholder_1),
@@ -2981,7 +2996,7 @@ internal fun TextInputDialog(onDismiss: () -> Unit, onSubmit: (String) -> Unit, 
         stringResource(R.string.text_input_placeholder_3),
         stringResource(R.string.text_input_placeholder_4)
     )
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable(initialText) { mutableStateOf(initialText) }
     var placeholderIdx by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -2990,6 +3005,7 @@ internal fun TextInputDialog(onDismiss: () -> Unit, onSubmit: (String) -> Unit, 
         }
     }
     FudGlassDialog(onDismissRequest = onDismiss) {
+        guidance?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         FudGlassTextField(
             value = input,
             onValueChange = { input = it },

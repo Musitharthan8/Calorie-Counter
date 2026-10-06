@@ -21,6 +21,15 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import com.apoorvdarshan.calorietracker.models.OpenRouterReasoningEffort
 
+internal suspend fun <T> bestEffortServingUnitRepair(block: suspend () -> T): T? =
+    try {
+        block()
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
 internal fun multiPhotoAnalysisPrompt(
     progressiveMeal: Boolean,
     description: String? = null
@@ -74,7 +83,8 @@ class FoodAnalysisService(
     private val prefs: PreferencesStore,
     private val keyStore: KeyStore,
     private val okHttp: OkHttpClient = defaultClient,
-    private val localGemma: LocalGemmaRuntime? = null
+    private val localGemma: LocalGemmaRuntime? = null,
+    private val nutritionSources: List<com.apoorvdarshan.calorietracker.nutrition.NutritionSource> = emptyList()
 ) {
 
     suspend fun analyzeWorkout(
@@ -358,10 +368,18 @@ class FoodAnalysisService(
         return callAi(prompt, imageBytesList = emptyList(), jsonResponse = false).trim()
     }
 
-    suspend fun analyzeText(description: String): FoodAnalysis {
+    suspend fun analyzeText(description: String): FoodAnalysis =
+        com.apoorvdarshan.calorietracker.nutrition.RegionalNutritionEngine(
+            interpreter = com.apoorvdarshan.calorietracker.nutrition.AiMealInterpreter { prompt -> callAi(prompt, emptyList()) },
+            resolver = com.apoorvdarshan.calorietracker.nutrition.NutritionResolver(nutritionSources),
+            estimate = ::estimateText
+        ).analyze(description)
+
+    /** Explicit fallback only: these values have not been fetched from a nutrition database. */
+    private suspend fun estimateText(description: String): FoodAnalysis {
         val prompt = """
             Estimate the nutritional content for: $description
-            Parse any quantities, brands, and multiple items from the text. If a brand is mentioned, use that brand's known nutritional data. If multiple items are described, sum up the total nutrition.
+            Parse any quantities, brands, and multiple items from the text. If a brand is mentioned, retain it, but do not claim to have looked up official data. If multiple items are described, sum up the total nutrition.
             Respond ONLY with JSON:
             {"name":"...","calories":0,"protein":0.0,"carbs":0.0,"fat":0.0,"serving_size_grams":0.0,"emoji":"<single specific food emoji>","sugar":0.0,"added_sugar":0.0,"fiber":0.0,"saturated_fat":0.0,"monounsaturated_fat":0.0,"polyunsaturated_fat":0.0,"cholesterol":0.0,"caffeine":0.0,"creatine":0.0,"beta_alanine":0.0,"l_citrulline":0.0,"l_carnitine":0.0,"l_arginine":0.0,"taurine":0.0,"betaine":0.0,"hmb":0.0,"sodium":0.0,"potassium":0.0,"trans_fat":0.0,"calcium":0.0,"iron":0.0,"magnesium":0.0,"zinc":0.0,"vitamin_a":0.0,"vitamin_c":0.0,"vitamin_d":0.0,"vitamin_b12":0.0,"vitamin_e":0.0,"vitamin_k":0.0,"folate":0.0,"omega_3":0.0,"ingredients":[],"unit_options":[]}
             Calories are integers. Protein/carbs/fat are decimal gram values when needed. serving_size_grams is the estimated total weight in grams. Nutrients are numbers: sugar/fiber/sat fat/mono fat/poly fat/trans fat/omega-3 in grams; cholesterol/caffeine/sodium/potassium/calcium/iron/magnesium/zinc/vitamin C/vitamin E in milligrams; vitamin A/vitamin D/vitamin B12/vitamin K/folate in micrograms.
@@ -455,6 +473,73 @@ class FoodAnalysisService(
         ).copy(progressiveMeal = progressiveMeal)
     }
 
+    /**
+     * Experimental grounded photo path. Not yet wired to the default camera UI.
+     *
+     * One vision call identifies foods/portions without nutrition; the regional resolver then owns
+     * the numbers. If interpretation or complete grounding fails, the existing photo estimator is
+     * preserved as an explicitly-labelled fallback.
+     */
+    internal suspend fun analyzeGroundedFoodPhotos(
+        imageBytesList: List<ByteArray>,
+        description: String? = null,
+        progressiveMeal: Boolean = false
+    ): FoodAnalysis {
+        val images = imageBytesList.filter { it.isNotEmpty() }.take(10)
+        if (images.isEmpty()) throw AiError.InvalidResponse
+        val inputLabel = description?.trim()?.takeIf { it.isNotEmpty() }?.take(4000) ?: "Photo meal"
+        val photoInterpreter = com.apoorvdarshan.calorietracker.nutrition.AiPhotoMealInterpreter {
+                prompt, suppliedImages ->
+            callAi(prompt, suppliedImages)
+        }
+
+        val interpretation = try {
+            photoInterpreter.interpret(
+                imageBytesList = images,
+                description = description,
+                progressiveMeal = progressiveMeal
+            )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            val fallback = analyzeFood(images, description, progressiveMeal)
+            fun provenance(name: String) =
+                com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+                    source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.AI_ESTIMATE,
+                    sourceName = "AI estimate",
+                    evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.AI_ESTIMATE,
+                    estimated = true,
+                    confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.LOW,
+                    originalWording = inputLabel,
+                    canonicalName = name
+                )
+            return fallback.copy(
+                nutritionProvenance = listOf(provenance(fallback.name)),
+                nutritionWarnings = listOf(
+                    "Structured photo interpretation was unavailable. Nutrition is an AI estimate."
+                ),
+                ingredients = fallback.ingredients.map {
+                    it.copy(nutritionProvenance = provenance(it.name))
+                }
+            )
+        }
+
+        val engine = com.apoorvdarshan.calorietracker.nutrition.RegionalNutritionEngine(
+            interpreter = com.apoorvdarshan.calorietracker.nutrition.AiMealInterpreter { prompt ->
+                callAi(prompt, emptyList())
+            },
+            resolver = com.apoorvdarshan.calorietracker.nutrition.NutritionResolver(nutritionSources),
+            estimate = ::estimateText
+        )
+        return engine.analyzeInterpretation(
+            interpretation = interpretation,
+            fallbackLabel = inputLabel,
+            fallbackEstimate = {
+                analyzeFood(images, description, progressiveMeal)
+            }
+        ).copy(progressiveMeal = progressiveMeal)
+    }
+
     suspend fun analyzeNutritionLabel(imageBytes: ByteArray, servingGrams: Double): FoodAnalysis {
         val prompt = """
             Read this nutrition facts label and extract per-100g values. If the label only shows per-serving, normalize using the serving size listed on the label.
@@ -468,11 +553,15 @@ class FoodAnalysisService(
             Use [] when no reliable non-gram label unit is visible. Do not include g/gram/grams in unit_options.
         """.trimIndent()
         val parsed = FoodJsonParser.parseLabelResponse(callAi(prompt, imageBytes))
-        return addingFallbackServingUnits(
-            analysis = parsed.analysis,
-            imageBytes = imageBytes,
-            shouldRequestFallback = parsed.shouldRequestServingUnitFallback
-        ).scaled(servingGrams)
+        return try {
+            addingFallbackServingUnits(
+                analysis = parsed.analysis,
+                imageBytes = imageBytes,
+                shouldRequestFallback = parsed.shouldRequestServingUnitFallback
+            ).scaled(servingGrams)
+        } catch (_: IllegalArgumentException) {
+            throw AiError.InvalidResponse
+        }
     }
 
     suspend fun extractAllergensFromLabReport(imageBytes: ByteArray): List<String> {
@@ -575,14 +664,14 @@ class FoodAnalysisService(
         shouldRequestFallback: Boolean
     ): FoodAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
-        val options = runCatching {
+        val options = bestEffortServingUnitRepair {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = analysis.servingSizeGrams,
                 imageBytes = imageBytes,
                 description = description
             )
-        }.getOrDefault(emptyList())
+        }.orEmpty()
         if (options.isEmpty()) return analysis
         val selected = options.first()
         return analysis.copy(
@@ -599,14 +688,14 @@ class FoodAnalysisService(
     ): NutritionLabelAnalysis {
         if (!ServingUnitRepairPolicy.shouldRepair(analysis, shouldRequestFallback)) return analysis
         val servingSizeGrams = analysis.servingSizeGrams ?: return analysis
-        val options = runCatching {
+        val options = bestEffortServingUnitRepair {
             inferServingUnitOptions(
                 name = analysis.name,
                 servingSizeGrams = servingSizeGrams,
                 imageBytes = imageBytes,
                 description = null
             )
-        }.getOrDefault(emptyList())
+        }.orEmpty()
         if (options.isEmpty()) return analysis
         return analysis.copy(servingUnitOptions = options)
     }

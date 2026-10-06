@@ -65,6 +65,123 @@ class MealIngredientTest {
     }
 
     @Test
+    fun ingredientScalingPreservesAndScalesMicronutrientEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            name = "Rice",
+            grams = 100.0,
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val doubled = ingredient.scaled(2.0)
+
+        assertEquals(200.0, doubled.grams, 0.0)
+        assertEquals(6.0, doubled.micronutrients!!.getValue("sodium").amount, 0.0)
+        assertEquals(provenance, doubled.nutritionProvenance)
+    }
+
+    @Test
+    fun proportionalIngredientEditPreservesScaledEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val edited = ingredient.withUserEdits(
+            name = "Rice",
+            grams = 200.0,
+            calories = 260,
+            protein = 4.0,
+            carbs = 56.0,
+            fat = 0.6
+        )
+
+        assertEquals(6.0, edited.micronutrients!!.getValue("sodium").amount, 0.0)
+        assertTrue(edited.nutritionProvenance!!.userEdited)
+    }
+
+    @Test
+    fun semanticIngredientEditInvalidatesSourceEvidence() {
+        val provenance = com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance(
+            source = com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence.HIGH,
+            originalWording = "100 g rice",
+            canonicalName = "rice"
+        )
+        val ingredient = MealIngredient(
+            "Rice", 100.0, 130, 2.0, 28.0, 0.3,
+            nutritionProvenance = provenance,
+            micronutrients = mapOf(
+                "sodium" to com.apoorvdarshan.calorietracker.nutrition.NutrientAmount(3.0, "mg")
+            )
+        )
+
+        val renamed = ingredient.withUserEdits(
+            name = "Tofu",
+            grams = 100.0,
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3
+        )
+        assertEquals(null, renamed.micronutrients)
+        assertEquals(null, renamed.nutritionProvenance)
+
+        val macroEdited = ingredient.withUserEdits(
+            name = "Rice",
+            grams = 100.0,
+            calories = 200,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3
+        )
+        assertEquals(null, macroEdited.micronutrients)
+        assertEquals(null, macroEdited.nutritionProvenance)
+    }
+
+    @Test
+    fun ingredientMathRejectsOverflowAndNonFiniteScaling() {
+        val ingredient = MealIngredient("Food", 100.0, Int.MAX_VALUE, 10.0, 10.0, 10.0)
+
+        assertTrue(runCatching { ingredient.scaled(2.0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { ingredient.scaled(Double.POSITIVE_INFINITY) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching { listOf(ingredient, ingredient).totals() }
+                .exceptionOrNull() is IllegalArgumentException
+        )
+    }
+
+    @Test
     fun oldFoodEntryJsonWithoutIngredientsStillDecodes() {
         val json = """{"name":"Apple","calories":95,"protein":0.5,"carbs":25.0,"fat":0.3,"source":"manual"}"""
         val entry = Json { ignoreUnknownKeys = true }.decodeFromString<FoodEntry>(json)
@@ -73,6 +190,18 @@ class MealIngredientTest {
         assertEquals("Apple", entry.name)
         assertEquals(FoodSource.MANUAL, entry.source)
         assertFalse(entry.progressiveMeal)
+    }
+
+    @Test
+    fun oldIngredientJsonWithoutMicronutrientSnapshotStillDecodes() {
+        val format = Json { ignoreUnknownKeys = true }
+        val ingredient = format.decodeFromString<MealIngredient>(
+            """{"name":"Rice","grams":100.0,"calories":130,"protein":2.0,"carbs":28.0,"fat":0.3}"""
+        )
+
+        assertEquals("Rice", ingredient.name)
+        assertEquals(null, ingredient.micronutrients)
+        assertEquals(null, ingredient.nutritionProvenance)
     }
 
     @Test
@@ -124,6 +253,72 @@ class MealIngredientTest {
 
         assertEquals(metadata, decoded.productMetadata)
         assertEquals(metadata, duplicated.productMetadata)
+    }
+
+    @Test
+    fun foodParserRejectsMissingOrNegativeRequiredNutrition() {
+        val missingFat = """{"name":"Meal","calories":500,"protein":20,"carbs":50}"""
+        val negativeProtein = """{"name":"Meal","calories":500,"protein":-1,"carbs":50,"fat":20}"""
+
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(missingFat) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(negativeProtein) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun foodParserRejectsOverflowingCaloriesAndInvalidServingMass() {
+        val hugeCalories = """{"name":"Meal","calories":999999999999,"protein":20,"carbs":50,"fat":20}"""
+        val badServing = """{"name":"Meal","calories":500,"protein":20,"carbs":50,"fat":20,"serving_size_grams":-10}"""
+
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(hugeCalories) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseFoodResponse(badServing) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun invalidIngredientPayloadCannotSaturateMealCalories() {
+        val json = """
+            {
+              "name":"Meal",
+              "calories":500,
+              "protein":20,
+              "carbs":50,
+              "fat":20,
+              "ingredients":[
+                {"name":"bad","grams":100,"calories":999999999999,"protein":1,"carbs":1,"fat":1}
+              ]
+            }
+        """.trimIndent()
+
+        val analysis = FoodJsonParser.parseFoodResponse(json).analysis
+
+        assertTrue(analysis.ingredients.isEmpty())
+        assertEquals(500, analysis.calories)
+    }
+
+    @Test
+    fun nutritionLabelParserRejectsNegativeValuesAndInvalidServingMass() {
+        val negativeFat = """
+            {"name":"Label","calories_per_100g":100,"protein_per_100g":5,"carbs_per_100g":15,"fat_per_100g":-1}
+        """.trimIndent()
+        val badServing = """
+            {"name":"Label","calories_per_100g":100,"protein_per_100g":5,"carbs_per_100g":15,"fat_per_100g":2,"serving_size_grams":0}
+        """.trimIndent()
+
+        assertTrue(runCatching { FoodJsonParser.parseLabelResponse(negativeFat) }.exceptionOrNull() === AiError.InvalidResponse)
+        assertTrue(runCatching { FoodJsonParser.parseLabelResponse(badServing) }.exceptionOrNull() === AiError.InvalidResponse)
+    }
+
+    @Test
+    fun nutritionLabelScalingRejectsUnsafeTotals() {
+        val label = NutritionLabelAnalysis(
+            name = "Label",
+            caloriesPer100g = Int.MAX_VALUE.toDouble(),
+            proteinPer100g = 1.0,
+            carbsPer100g = 1.0,
+            fatPer100g = 1.0
+        )
+
+        assertTrue(runCatching { label.scaled(200.0) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { label.scaled(Double.POSITIVE_INFINITY) }.exceptionOrNull() is IllegalArgumentException)
     }
 
     @Test

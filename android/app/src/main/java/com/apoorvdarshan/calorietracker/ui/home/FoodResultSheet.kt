@@ -76,6 +76,7 @@ import com.apoorvdarshan.calorietracker.models.ServingUnitOption
 import com.apoorvdarshan.calorietracker.models.ServingAmountExpression
 import com.apoorvdarshan.calorietracker.models.SupplementalNutrient
 import com.apoorvdarshan.calorietracker.models.totals
+import com.apoorvdarshan.calorietracker.models.micronutrientTotalsOrNull
 import com.apoorvdarshan.calorietracker.models.UserProfile
 import com.apoorvdarshan.calorietracker.models.allergenAnalysis
 import com.apoorvdarshan.calorietracker.services.ai.FoodAnalysis
@@ -205,6 +206,10 @@ fun FoodResultSheet(
     var editableCholesterol by rememberSaveable(analysis) { mutableStateOf(analysis.cholesterol) }
     var editableCaffeine by rememberSaveable(analysis) { mutableStateOf(analysis.caffeine) }
     var editableSupplementalNutrients by rememberSaveable(analysis, stateSaver = foodDraftSaver<Map<String, Double>>()) { mutableStateOf(analysis.supplementalNutrients) }
+    var editableSourceNutrients by rememberSaveable(
+        analysis,
+        stateSaver = foodDraftSaver<Map<String, com.apoorvdarshan.calorietracker.nutrition.NutrientAmount>>()
+    ) { mutableStateOf(analysis.sourceNutrients) }
     var editableSodium by rememberSaveable(analysis) { mutableStateOf(analysis.sodium) }
     var editablePotassium by rememberSaveable(analysis) { mutableStateOf(analysis.potassium) }
     var editableTransFat by rememberSaveable(analysis) { mutableStateOf(analysis.transFat) }
@@ -256,10 +261,21 @@ fun FoodResultSheet(
     fun displayD(v: Double?) = v?.let { String.format("%.1f", it) } ?: emDashText
     fun editD(v: Double?) = v?.let { String.format("%.1f", it) }.orEmpty()
     fun decimalValue(text: String): Double? =
-        text.trim().replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0.0 }
+        text.trim()
+            .replace(',', '.')
+            .toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it in 0.0..1_000_000.0 }
     fun baseDoubleFromText(text: String): Double = (decimalValue(text) ?: 0.0) / scale.coerceAtLeast(0.0001)
     fun baseOptionalFromText(text: String): Double? = decimalValue(text)?.let { it / scale.coerceAtLeast(0.0001) }
     fun scaledIngredients() = editableIngredients.map { it.scaled(scale) }
+    fun scaledSourceNutrients() = editableSourceNutrients.mapValues { (_, nutrient) ->
+        nutrient.copy(amount = nutrient.amount * scale)
+    }
+    fun sourceNutrientLabel(key: String): String = key
+        .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+        .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+    fun sourceNutrientText(key: String, nutrient: com.apoorvdarshan.calorietracker.nutrition.NutrientAmount): String =
+        "${sourceNutrientLabel(key)} ${String.format(java.util.Locale.US, "%.1f", nutrient.amount)} ${nutrient.unit}"
     fun applyMicronutrients(snapshot: MealMicronutrientSnapshot) {
         editableSugar = snapshot.sugar
         editableAddedSugar = snapshot.addedSugar
@@ -287,34 +303,68 @@ fun FoodResultSheet(
         editableOmega3 = snapshot.omega3
     }
     fun applyIngredientChanges(displayedIngredients: List<MealIngredient>) {
-        applyMicronutrients(
-            MealMicronutrientSnapshot(
-                sugar = editableSugar,
-                addedSugar = editableAddedSugar,
-                fiber = editableFiber,
-                saturatedFat = editableSaturatedFat,
-                monounsaturatedFat = editableMonounsaturatedFat,
-                polyunsaturatedFat = editablePolyunsaturatedFat,
-                cholesterol = editableCholesterol,
-                caffeine = editableCaffeine,
-                supplementalNutrients = editableSupplementalNutrients,
-                sodium = editableSodium,
-                potassium = editablePotassium,
-                transFat = editableTransFat,
-                calcium = editableCalcium,
-                iron = editableIron,
-                magnesium = editableMagnesium,
-                zinc = editableZinc,
-                vitaminA = editableVitaminA,
-                vitaminC = editableVitaminC,
-                vitaminD = editableVitaminD,
-                vitaminB12 = editableVitaminB12,
-                vitaminE = editableVitaminE,
-                vitaminK = editableVitaminK,
-                folate = editableFolate,
-                omega3 = editableOmega3
-            ).stretched(editableIngredients.totals().grams, displayedIngredients.totals().grams)
-        )
+        val componentMicros = displayedIngredients.micronutrientTotalsOrNull()
+        if (componentMicros != null) {
+            // Evidence-backed mixed meals can be recomputed from their edited components. Never
+            // stretch the old whole-meal micronutrients by total mass when proportions changed.
+            applyMicronutrients(componentMicros.snapshot)
+            editableSourceNutrients = componentMicros.sourceNutrients
+        } else if (
+            editableIngredients.any { it.micronutrients != null } ||
+            displayedIngredients.any { it.micronutrients != null }
+        ) {
+            // Component evidence exists on either side of the edit but the edited set is
+            // incomplete. Do not resurrect or stretch stale meal-level micronutrients across a
+            // partially grounded component list.
+            applyMicronutrients(MealMicronutrientSnapshot())
+            editableSourceNutrients = emptyMap()
+        } else {
+            // Legacy AI/manual meals may only have meal-level micros. Keep the old proportional
+            // fallback for those records rather than inventing component-level evidence.
+            val previousIngredientGrams = editableIngredients.totals().grams
+            val nextIngredientGrams = displayedIngredients.totals().grams
+            if (previousIngredientGrams > 0 && nextIngredientGrams >= 0) {
+                val factor = nextIngredientGrams / previousIngredientGrams
+                if (factor.isFinite() && factor >= 0) {
+                    editableSourceNutrients = editableSourceNutrients.mapNotNull { (key, nutrient) ->
+                        val amount = nutrient.amount * factor
+                        if (amount.isFinite() && amount >= 0) {
+                            key to nutrient.copy(amount = amount)
+                        } else {
+                            null
+                        }
+                    }.toMap()
+                }
+            }
+            applyMicronutrients(
+                MealMicronutrientSnapshot(
+                    sugar = editableSugar,
+                    addedSugar = editableAddedSugar,
+                    fiber = editableFiber,
+                    saturatedFat = editableSaturatedFat,
+                    monounsaturatedFat = editableMonounsaturatedFat,
+                    polyunsaturatedFat = editablePolyunsaturatedFat,
+                    cholesterol = editableCholesterol,
+                    caffeine = editableCaffeine,
+                    supplementalNutrients = editableSupplementalNutrients,
+                    sodium = editableSodium,
+                    potassium = editablePotassium,
+                    transFat = editableTransFat,
+                    calcium = editableCalcium,
+                    iron = editableIron,
+                    magnesium = editableMagnesium,
+                    zinc = editableZinc,
+                    vitaminA = editableVitaminA,
+                    vitaminC = editableVitaminC,
+                    vitaminD = editableVitaminD,
+                    vitaminB12 = editableVitaminB12,
+                    vitaminE = editableVitaminE,
+                    vitaminK = editableVitaminK,
+                    folate = editableFolate,
+                    omega3 = editableOmega3
+                ).stretched(previousIngredientGrams, nextIngredientGrams)
+            )
+        }
         editableIngredients = displayedIngredients
         val totals = displayedIngredients.totals()
         editableCalories = totals.calories
@@ -330,6 +380,52 @@ fun FoodResultSheet(
             servingSizeIsKnown = true
         }
     }
+    fun nutritionWasEdited(): Boolean =
+        editableCalories != reviewMacros.calories ||
+            editableProtein != reviewMacros.protein ||
+            editableCarbs != reviewMacros.carbs ||
+            editableFat != reviewMacros.fat ||
+            editableSugar != analysis.sugar ||
+            editableAddedSugar != analysis.addedSugar ||
+            editableFiber != analysis.fiber ||
+            editableSaturatedFat != analysis.saturatedFat ||
+            editableMonounsaturatedFat != analysis.monounsaturatedFat ||
+            editablePolyunsaturatedFat != analysis.polyunsaturatedFat ||
+            editableCholesterol != analysis.cholesterol ||
+            editableCaffeine != analysis.caffeine ||
+            editableSupplementalNutrients != analysis.supplementalNutrients ||
+            editableSourceNutrients != analysis.sourceNutrients ||
+            editableSodium != analysis.sodium ||
+            editablePotassium != analysis.potassium ||
+            editableTransFat != analysis.transFat ||
+            editableCalcium != analysis.calcium ||
+            editableIron != analysis.iron ||
+            editableMagnesium != analysis.magnesium ||
+            editableZinc != analysis.zinc ||
+            editableVitaminA != analysis.vitaminA ||
+            editableVitaminC != analysis.vitaminC ||
+            editableVitaminD != analysis.vitaminD ||
+            editableVitaminB12 != analysis.vitaminB12 ||
+            editableVitaminE != analysis.vitaminE ||
+            editableVitaminK != analysis.vitaminK ||
+            editableFolate != analysis.folate ||
+            editableOmega3 != analysis.omega3 ||
+            editableIngredients != analysis.ingredients
+
+    fun provenanceAfterEdits() =
+        if (nutritionWasEdited()) {
+            analysis.nutritionProvenance.map { it.copy(userEdited = true) }
+        } else {
+            analysis.nutritionProvenance
+        }
+
+    fun warningsAfterEdits() =
+        if (nutritionWasEdited()) {
+            (analysis.nutritionWarnings + "Nutrition values were edited after source lookup.").distinct()
+        } else {
+            analysis.nutritionWarnings
+        }
+
     fun editedAnalysis() = analysis.copy(
         name = name.trim().ifEmpty { analysis.name },
         calories = editableCalories,
@@ -345,6 +441,7 @@ fun FoodResultSheet(
         cholesterol = editableCholesterol,
         caffeine = editableCaffeine,
         supplementalNutrients = editableSupplementalNutrients,
+        sourceNutrients = editableSourceNutrients,
         sodium = editableSodium,
         potassium = editablePotassium,
         transFat = editableTransFat,
@@ -374,7 +471,10 @@ fun FoodResultSheet(
         },
         servingSizeIsKnown = servingSizeIsKnown,
         ingredients = editableIngredients,
-        productMetadata = analysis.productMetadata
+        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = provenanceAfterEdits(),
+        nutritionWarnings = warningsAfterEdits()
     )
     fun previewEntry() = FoodEntry(
         name = name.trim().ifEmpty { analysis.name },
@@ -396,6 +496,7 @@ fun FoodResultSheet(
         cholesterol = scaledD(editableCholesterol),
         caffeine = scaledD(editableCaffeine),
         supplementalNutrients = editableSupplementalNutrients.mapValues { (_, value) -> scaledD(value) ?: 0.0 },
+        sourceNutrients = scaledSourceNutrients(),
         sodium = scaledD(editableSodium),
         potassium = scaledD(editablePotassium),
         transFat = scaledD(editableTransFat),
@@ -424,7 +525,10 @@ fun FoodResultSheet(
             selectedServingQuantity
         },
         ingredients = scaledIngredients(),
-        productMetadata = analysis.productMetadata
+        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = provenanceAfterEdits(),
+        nutritionWarnings = warningsAfterEdits()
     )
     var whatIfEntry by rememberSaveable(stateSaver = foodDraftSaver<FoodEntry?>()) { mutableStateOf<FoodEntry?>(null) }
 
@@ -466,6 +570,38 @@ fun FoodResultSheet(
                 .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
+            if (analysis.nutritionProvenance.isNotEmpty()) {
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            analysis.nutritionProvenance
+                                .map { provenance ->
+                                    provenance.datasetVersion
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { "${provenance.sourceName} ($it)" }
+                                        ?: provenance.sourceName
+                                }
+                                .distinct()
+                                .joinToString(" • "),
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        warningsAfterEdits().forEach { warning ->
+                            Text(warning, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (editableSourceNutrients.isNotEmpty()) {
+                            Text(
+                                scaledSourceNutrients()
+                                    .toSortedMap()
+                                    .entries
+                                    .joinToString(" • ") { (key, nutrient) ->
+                                        sourceNutrientText(key, nutrient)
+                                    },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
             // Swipeable original-photo gallery OR 80sp emoji fallback.
             item {
                 Box(
@@ -552,7 +688,10 @@ fun FoodResultSheet(
                         fat = analysis.fat,
                         source = source,
                         ingredients = analysis.ingredients,
-                        productMetadata = analysis.productMetadata
+                        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
                     )
                     FoodProductMetadataCard(
                         metadata,
@@ -573,7 +712,10 @@ fun FoodResultSheet(
                         fat = analysis.fat,
                         source = source,
                         ingredients = analysis.ingredients,
-                        productMetadata = analysis.productMetadata
+                        productMetadata = analysis.productMetadata,
+        mealInterpretation = analysis.mealInterpretation,
+        nutritionProvenance = analysis.nutritionProvenance,
+        nutritionWarnings = analysis.nutritionWarnings
                     )
                     SheetPillCard {
                         Text(
