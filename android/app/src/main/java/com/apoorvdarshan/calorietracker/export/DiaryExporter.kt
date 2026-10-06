@@ -7,6 +7,8 @@ import com.apoorvdarshan.calorietracker.models.FoodEntry
 import com.apoorvdarshan.calorietracker.models.FoodSource
 import com.apoorvdarshan.calorietracker.models.MealType
 import com.apoorvdarshan.calorietracker.models.UserProfile
+import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
+import com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
@@ -135,6 +137,8 @@ object DiaryExporter {
     @Serializable private data class IngredientDto(
         val name: String, val quantity_g: Double, val calories: Int,
         val protein_g: Double, val carbs_g: Double, val fat_g: Double,
+        val nutrition_provenance: NutritionProvenance? = null,
+        val micronutrients: Map<String, NutrientAmount>? = null,
     )
     @Serializable private data class ItemDto(
         val entry_id: String, val name: String, val quantity_g: Double? = null, val calories: Int,
@@ -144,12 +148,15 @@ object DiaryExporter {
         val polyunsaturated_fat_g: Double? = null, val cholesterol_mg: Double? = null,
         val caffeine_mg: Double? = null, val sodium_mg: Double? = null, val potassium_mg: Double? = null, val trans_fat_g: Double? = null,
         val supplemental_nutrients_g: Map<String, Double> = emptyMap(),
+        val source_nutrients: Map<String, NutrientAmount> = emptyMap(),
         val calcium_mg: Double? = null, val iron_mg: Double? = null, val magnesium_mg: Double? = null,
         val zinc_mg: Double? = null, val vitamin_a_mcg: Double? = null, val vitamin_c_mg: Double? = null,
         val vitamin_d_mcg: Double? = null, val vitamin_b12_mcg: Double? = null,
         val vitamin_e_mg: Double? = null, val vitamin_k_mcg: Double? = null,
         val folate_mcg: Double? = null, val omega3_g: Double? = null,
         val time: String, val source: String, val note: String? = null,
+        val nutrition_provenance: List<NutritionProvenance> = emptyList(),
+        val nutrition_warnings: List<String> = emptyList(),
         val ingredients: List<IngredientDto> = emptyList(),
     )
     @Serializable private data class MealDto(val type: String, val items: List<ItemDto>)
@@ -180,6 +187,7 @@ object DiaryExporter {
                             polyunsaturated_fat_g = e.polyunsaturatedFat?.let { r1(it) },
                             cholesterol_mg = e.cholesterol?.let { r1(it) }, caffeine_mg = e.caffeine?.let { r1(it) }, sodium_mg = e.sodium?.let { r1(it) },
                             supplemental_nutrients_g = e.supplementalNutrients.mapValues { (_, value) -> r1(value) },
+                            source_nutrients = e.sourceNutrients,
                             potassium_mg = e.potassium?.let { r1(it) }, trans_fat_g = e.transFat?.let { r1(it) },
                             calcium_mg = e.calcium?.let { r1(it) }, iron_mg = e.iron?.let { r1(it) },
                             magnesium_mg = e.magnesium?.let { r1(it) }, zinc_mg = e.zinc?.let { r1(it) },
@@ -189,6 +197,8 @@ object DiaryExporter {
                             folate_mcg = e.folate?.let { r1(it) }, omega3_g = e.omega3?.let { r1(it) },
                             time = time(e), source = sourceLabel(e.source),
                             note = e.customNote?.takeIf { it.isNotBlank() },
+                            nutrition_provenance = e.nutritionProvenance,
+                            nutrition_warnings = e.nutritionWarnings,
                             ingredients = e.ingredients.map { ingredient ->
                                 IngredientDto(
                                     name = ingredient.name,
@@ -197,6 +207,8 @@ object DiaryExporter {
                                     protein_g = r1(ingredient.protein),
                                     carbs_g = r1(ingredient.carbs),
                                     fat_g = r1(ingredient.fat),
+                                    nutrition_provenance = ingredient.nutritionProvenance,
+                                    micronutrients = ingredient.micronutrients,
                                 )
                             },
                         )
@@ -219,7 +231,7 @@ object DiaryExporter {
             )
         }
         val doc = Doc(
-            export = MetaDto("Fud AI", "1.5", RangeDto(dayFmt.format(lo), dayFmt.format(hi))),
+            export = MetaDto("Fud AI", "1.6", RangeDto(dayFmt.format(lo), dayFmt.format(hi))),
             days = days,
         )
         return jsonPretty.encodeToString(Doc.serializer(), doc)
