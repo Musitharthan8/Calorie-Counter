@@ -4,6 +4,8 @@ import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private const val DISPLAY_ROUNDING_TOLERANCE_G = 0.05 + 1e-9
+
 @Serializable
 data class MealIngredient(
     val name: String,
@@ -53,7 +55,7 @@ data class MealIngredient(
             null
         }
         fun close(actual: Double, expected: Double): Boolean =
-            abs(actual - expected) <= maxOf(0.05, abs(expected) * 0.001)
+            abs(actual - expected) <= maxOf(DISPLAY_ROUNDING_TOLERANCE_G, abs(expected) * 0.001)
 
         val sourceEvidenceStillApplies = proportional != null &&
             name.trim() == this.name.trim() &&
