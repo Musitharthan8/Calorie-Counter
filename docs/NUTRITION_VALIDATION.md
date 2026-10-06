@@ -162,3 +162,36 @@ Validation status is unchanged:
   enable/dispatch operation.
 
 PR #1 must remain draft.
+
+
+## Display-rounded component evidence regression, 6 October 2026
+
+Claude's static audit identified a boundary bug in `MealIngredient.withUserEdits`.
+
+The ingredient editor displays non-integer macros through `MacroValueFormatter.string`, which uses
+one decimal place. A pure portion change can therefore turn an exact proportional value such as
+`0.75 g` fat into editable text `0.8`. The previous evidence check allowed a flat `0.05 g`
+difference. In binary floating point, `0.8 - 0.75` can evaluate to
+`0.05000000000000004`, just above that boundary.
+
+That caused a valid pure portion edit to be misclassified as a manual macro edit. The component's
+micronutrient snapshot and provenance were then dropped, which safely made mixed-meal parent
+micronutrients unknown but lost valid evidence unnecessarily.
+
+The branch now uses a display-rounding tolerance of:
+
+`0.05 + 1e-9`
+
+while retaining the existing relative tolerance for larger values.
+
+New regression tests cover:
+- 100 g → 150 g Rice where exact fat becomes 0.75 g and displayed/editable fat is 0.8 g:
+  source evidence remains and sodium scales from 3.0 mg to 4.5 mg;
+- changing the displayed fat to 0.9 g still invalidates component micronutrients/provenance;
+- renaming the component to Tofu still invalidates component micronutrients/provenance.
+
+These tests are committed in `MealIngredientEvidenceTest.kt` but have **not executed** because the
+Android Gradle gate remains unavailable. This does not change the last executed validation result:
+the latest actually run importer suite remains **28 passing tests**.
+
+PR #1 remains draft.
