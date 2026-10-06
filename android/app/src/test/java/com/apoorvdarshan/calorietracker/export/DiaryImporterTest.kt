@@ -4,6 +4,11 @@ import com.apoorvdarshan.calorietracker.models.FoodEntry
 import com.apoorvdarshan.calorietracker.models.FoodSource
 import com.apoorvdarshan.calorietracker.models.MealType
 import com.apoorvdarshan.calorietracker.models.UserProfile
+import com.apoorvdarshan.calorietracker.nutrition.InterpretationConfidence
+import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
+import com.apoorvdarshan.calorietracker.nutrition.NutritionEvidence
+import com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance
+import com.apoorvdarshan.calorietracker.nutrition.NutritionSourceKind
 import com.google.gson.JsonParser
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -59,6 +64,59 @@ class DiaryImporterTest {
         val imported = requireNotNull(result.firstOrNull { it.id == id })
         assertEquals(8.5, imported.fiber!!, 0.0001)
         assertEquals("meal.jpg", imported.imageFilename)
+    }
+
+    @Test
+    fun replaceRangeUsesImportedNutritionEvidenceWhilePreservingLocalMedia() {
+        val date = LocalDate.of(2026, 8, 5)
+        val time = date.atTime(12, 30).atZone(ZoneId.systemDefault()).toInstant()
+        val id = UUID.randomUUID()
+        val importedProvenance = NutritionProvenance(
+            source = NutritionSourceKind.USDA,
+            sourceName = "USDA fixture",
+            evidence = NutritionEvidence.DATABASE,
+            estimated = false,
+            confidence = InterpretationConfidence.HIGH,
+            originalWording = "rice",
+            canonicalName = "rice"
+        )
+        val exportedEntry = FoodEntry(
+            id = id,
+            name = "Rice",
+            calories = 130,
+            protein = 2.0,
+            carbs = 28.0,
+            fat = 0.3,
+            timestamp = time,
+            source = FoodSource.TEXT_INPUT,
+            mealType = MealType.LUNCH,
+            sourceNutrients = mapOf("phosphorus" to NutrientAmount(40.0, "mg")),
+            nutritionProvenance = listOf(importedProvenance),
+            nutritionWarnings = listOf("Imported evidence")
+        )
+        val staleLocal = exportedEntry.copy(
+            imageFilename = "local.jpg",
+            sourceNutrients = mapOf("phosphorus" to NutrientAmount(999.0, "mg")),
+            nutritionProvenance = emptyList(),
+            nutritionWarnings = listOf("Stale local evidence")
+        )
+        val (_, exported) = requireNotNull(DiaryExporter.build(
+            entries = listOf(exportedEntry),
+            start = date,
+            end = date,
+            format = DiaryFormat.JSON,
+            profile = null,
+            mealDisplay = { it.name },
+        ))
+
+        val preview = DiaryImporter.parse(exported)
+        val result = DiaryImporter.applying(preview, listOf(staleLocal), DiaryImportMode.REPLACE_DATE_RANGE)
+        val merged = result.single()
+
+        assertEquals("local.jpg", merged.imageFilename)
+        assertEquals(exportedEntry.sourceNutrients, merged.sourceNutrients)
+        assertEquals(exportedEntry.nutritionProvenance, merged.nutritionProvenance)
+        assertEquals(exportedEntry.nutritionWarnings, merged.nutritionWarnings)
     }
 
     @Test
