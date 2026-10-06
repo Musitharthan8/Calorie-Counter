@@ -5,6 +5,8 @@ import com.apoorvdarshan.calorietracker.models.FoodEntry
 import com.apoorvdarshan.calorietracker.models.FoodSource
 import com.apoorvdarshan.calorietracker.models.MealIngredient
 import com.apoorvdarshan.calorietracker.models.MealType
+import com.apoorvdarshan.calorietracker.nutrition.NutrientAmount
+import com.apoorvdarshan.calorietracker.nutrition.NutritionProvenance
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -76,6 +78,7 @@ object DiaryImporter {
         val sodium_mg: Double? = null,
         val potassium_mg: Double? = null,
         val supplemental_nutrients_g: Map<String, Double> = emptyMap(),
+        val source_nutrients: Map<String, NutrientAmount> = emptyMap(),
         val trans_fat_g: Double? = null,
         val calcium_mg: Double? = null,
         val iron_mg: Double? = null,
@@ -92,6 +95,8 @@ object DiaryImporter {
         val time: String,
         val source: String,
         val note: String? = null,
+        val nutrition_provenance: List<NutritionProvenance> = emptyList(),
+        val nutrition_warnings: List<String> = emptyList(),
         val ingredients: List<Ingredient> = emptyList(),
     )
 
@@ -103,6 +108,8 @@ object DiaryImporter {
         val protein_g: Double,
         val carbs_g: Double,
         val fat_g: Double,
+        val nutrition_provenance: NutritionProvenance? = null,
+        val micronutrients: Map<String, NutrientAmount>? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -175,6 +182,7 @@ object DiaryImporter {
                             cholesterol = item.cholesterol_mg,
                             caffeine = item.caffeine_mg,
                             supplementalNutrients = item.supplemental_nutrients_g,
+                            sourceNutrients = item.source_nutrients,
                             sodium = item.sodium_mg,
                             potassium = item.potassium_mg,
                             transFat = item.trans_fat_g,
@@ -201,8 +209,12 @@ object DiaryImporter {
                                     protein = ingredient.protein_g,
                                     carbs = ingredient.carbs_g,
                                     fat = ingredient.fat_g,
+                                    nutritionProvenance = ingredient.nutrition_provenance,
+                                    micronutrients = ingredient.micronutrients,
                                 )
                             },
+                            nutritionProvenance = item.nutrition_provenance,
+                            nutritionWarnings = item.nutrition_warnings,
                         ))
                     }
                 }
