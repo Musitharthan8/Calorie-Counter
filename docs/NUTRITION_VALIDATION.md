@@ -195,3 +195,71 @@ Android Gradle gate remains unavailable. This does not change the last executed 
 the latest actually run importer suite remains **28 passing tests**.
 
 PR #1 remains draft.
+## Component evidence and diary round-trip follow-up, 6 October 2026
+
+Static continuation of the mixed-meal evidence audit found two additional data-integrity gaps.
+
+### Newly introduced component evidence
+
+Both the model edit helper and the first-time Review Food sheet previously cleared stale parent
+micronutrients only when the **old** ingredient list already contained component-level evidence.
+That missed a legacy/manual meal where a newly added grounded ingredient introduced evidence for
+the first time while the remaining legacy ingredients still had no component snapshots.
+
+In that case the component total is incomplete, so stretching the old meal-level micronutrients
+across the new mixed list is not defensible. The branch now checks evidence on both the previous and
+edited ingredient sets and clears parent micronutrients/source nutrients when full component
+coverage is unavailable.
+
+`MealMicronutrientStretchTest` now includes an unexecuted regression where a 100 g legacy rice
+entry with stale sodium/phosphorus gets a grounded chicken component added. The safe result keeps
+the edited macros/weight but clears the unsupported parent micronutrients instead of stretching
+them.
+
+The existing Edit Food sheet delegates to the same model helper, so the model fix covers saved-entry
+edits as well as the explicit matching guard in Review Food.
+
+### Diary JSON evidence preservation
+
+The shareable/importable diary JSON format previously preserved legacy nutrient columns and basic
+ingredient macros but discarded newer grounding evidence. Export -> import could therefore lose:
+
+- `sourceNutrients`;
+- parent `nutritionProvenance` and `nutritionWarnings`;
+- per-ingredient `nutritionProvenance`;
+- per-ingredient micronutrient snapshots.
+
+JSON export format `1.6` now carries those fields. They all have defaults on import, so older 1.x
+diary exports remain accepted by the existing major-version compatibility check.
+
+The replace-date-range merge path was also corrected. It still preserves local-only media from the
+matched existing entry, but nutrition evidence now comes from the imported entry rather than
+silently retaining stale pre-import `sourceNutrients`, provenance, or warnings.
+
+New unexecuted regressions cover:
+- grounded parent and ingredient evidence surviving JSON export -> parse;
+- replace-date-range using imported evidence while preserving the existing local image.
+
+### Remaining static audit
+
+The previously uninspected paths were also read at the live branch state:
+
+- `CombinedMeal.kt` recomputes complete component micronutrients and clears stale parent values when
+  evidence becomes incomplete;
+- `HomeViewModel.saveAnalysis` carries edited ingredients, source nutrients and provenance into the
+  saved `FoodEntry`;
+- `PersonalFoodSource` preserves saved parent micronutrients plus original single-source dataset
+  metadata when a personal food is reused;
+- `FoodEntry.duplicatedForLogging` retains ingredients, source nutrients and provenance.
+
+No additional change was required in those paths during this pass.
+
+### Validation status
+
+These Kotlin changes and regressions are committed but **have not executed**. GitHub still reports
+zero workflow runs/status checks for the branch, and the available connector can inspect or rerun an
+existing Actions run but cannot create the first run. Android compile, unit tests and lint therefore
+remain unvalidated.
+
+The latest actually executed validation remains the earlier importer checkpoint: **28 Python tests
+passed**. PR #1 remains draft.
