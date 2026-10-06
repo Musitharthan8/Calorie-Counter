@@ -294,6 +294,7 @@ object DiaryImporter {
         cholesterol = imported.cholesterol,
         caffeine = imported.caffeine,
         supplementalNutrients = imported.supplementalNutrients,
+        sourceNutrients = imported.sourceNutrients,
         sodium = imported.sodium,
         potassium = imported.potassium,
         transFat = imported.transFat,
@@ -312,6 +313,8 @@ object DiaryImporter {
         servingSizeGrams = imported.servingSizeGrams,
         customNote = imported.customNote,
         ingredients = imported.ingredients,
+        nutritionProvenance = imported.nutritionProvenance,
+        nutritionWarnings = imported.nutritionWarnings,
     )
 
     private fun validate(item: Item) {
