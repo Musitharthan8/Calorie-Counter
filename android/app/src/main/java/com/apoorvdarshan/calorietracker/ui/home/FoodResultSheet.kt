@@ -309,10 +309,13 @@ fun FoodResultSheet(
             // stretch the old whole-meal micronutrients by total mass when proportions changed.
             applyMicronutrients(componentMicros.snapshot)
             editableSourceNutrients = componentMicros.sourceNutrients
-        } else if (editableIngredients.any { it.micronutrients != null }) {
-            // Component evidence existed but the edited set is now incomplete (for example a
-            // source-backed chicken row was manually changed into tofu). Do not resurrect stale
-            // meal-level micronutrients through proportional stretching.
+        } else if (
+            editableIngredients.any { it.micronutrients != null } ||
+            displayedIngredients.any { it.micronutrients != null }
+        ) {
+            // Component evidence exists on either side of the edit but the edited set is
+            // incomplete. Do not resurrect or stretch stale meal-level micronutrients across a
+            // partially grounded component list.
             applyMicronutrients(MealMicronutrientSnapshot())
             editableSourceNutrients = emptyMap()
         } else {
