@@ -198,6 +198,9 @@ internal fun NutritionResolutionResult.toFoodAnalysis(): FoodAnalysis {
         mealInterpretation = interpretation,
         nutritionProvenance = matches.map { it.provenance },
         nutritionWarnings = buildList {
+            if (!allGramsKnown) {
+                add("Nutrition is per menu serving. Serving weight is unavailable. Use serving counts rather than gram-based edits.")
+            }
             if (matches.any { it.provenance.estimated }) {
                 add("Includes estimated nutrition values; check source details.")
             }

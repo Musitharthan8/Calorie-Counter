@@ -263,6 +263,7 @@ class AppContainer(app: FudAIApp) {
                     favorites + learned
                 }
             )
+            add(com.apoorvdarshan.calorietracker.nutrition.SingaporeBrandNutritionSource())
             add(com.apoorvdarshan.calorietracker.nutrition.OpenFoodFactsNutritionSource())
             addAll(com.apoorvdarshan.calorietracker.nutrition.BundledNutritionSources.create(app))
         }
